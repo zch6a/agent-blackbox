@@ -61,9 +61,20 @@ The big finding of this round was a **cost bug**: Claude Code's `cost-state` is 
 
 67 tests passing.
 
-## Round 5 — backlog
+## Round 5 — v1.0.0 (2026-11-10)
 
-- [ ] Full read-through of `ui/app.js` (1,500 lines): split obvious sections, remove duplication, check every `innerHTML` for escaping.
-- [ ] Security: fuzz the Markdown renderer and `esc()` with hostile session content (HTML, `javascript:` links, giant lines).
-- [ ] Error paths: unreadable log file, permission denied, a log deleted while the UI is open.
-- [ ] Final screenshots and GIF refresh; final CHANGELOG pass.
+Security and failure modes — the round for things that only go wrong on someone else's machine.
+
+- **Renderer split out and fuzzed:** escaping and the Markdown renderer moved to `ui/markdown.js`, shared by the UI, exported files and a new test that loads it in a VM sandbox. The test checks 26 known attack strings (script tags, event handlers, `javascript:`/`data:` links, attribute breakouts, fence escapes, nested brackets), 3,000 random strings of hostile fragments, and ReDoS-shaped inputs (50k `*`, `[`, backticks, 2 MB lines; all under 1.5 s). Every output may contain only allow-listed tags, only `href`/`target`/`rel`, and only `http(s)` hrefs.
+  - **Found:** the autolinker accepted `https://|#&lt;script…` and swallowed escaped `<`, `>` and quotes into the link. It could not run script (it is still an `https:` URL), but it was wrong. URLs now need a real host start and stop at any escaped angle bracket or quote.
+- **innerHTML audit:** listed every `${…}` interpolation in `app.js` that is not wrapped in an escaping/formatting helper (~120). All remaining ones are numbers or adapter-generated constants (`agent`, `level`, `op`); none carry log text.
+- **Messy disks (new tests):** a log cut off mid-line, empty and binary `.jsonl` files, a directory named `x.jsonl`, a non-zstd `.zstd` log, a garbage Codex rollout and a junk SQLite WAL — the good sessions are all listed, the rest skipped, nothing throws. A log deleted while the UI is open returns a clean 404; a malformed session key returns 400 instead of 500; no stack traces reach the client.
+- **Final assets:** screenshots and replay GIF regenerated from demo data; Insights KPI captions shortened so they no longer truncate ("74% recorded by agents", "+1 sub-agent").
+
+75 tests passing. Five polish rounds done.
+
+## Next cycle (after all 12 projects) — ideas
+
+- Add `repository` to `package.json` once the GitHub repo exists (npm needs it for README images), then publish.
+- Gemini CLI and Cursor adapters if their local logs are readable.
+- A `blackbox watch` TUI for a running session.

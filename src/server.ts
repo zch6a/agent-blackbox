@@ -149,7 +149,7 @@ export async function serve(opts: ServeOptions = {}): Promise<RunningServer> {
       );
       return send(res, 200, html, MIME['.html']);
     }
-    if (path === '/app.js' || path === '/style.css' || path === '/favicon.svg') {
+    if (path === '/app.js' || path === '/markdown.js' || path === '/style.css' || path === '/favicon.svg') {
       const name = path.slice(1);
       return send(res, 200, await readFile(uiFile(name)), MIME[name.slice(name.lastIndexOf('.'))]);
     }
@@ -180,7 +180,12 @@ export async function serve(opts: ServeOptions = {}): Promise<RunningServer> {
       }
       const m = /^\/api\/session\/([^/]+)(?:\/event\/(\d+))?$/.exec(path);
       if (m) {
-        const key = decodeURIComponent(m[1] ?? '');
+        let key: string;
+        try {
+          key = decodeURIComponent(m[1] ?? '');
+        } catch {
+          return json(res, { error: 'bad session key' }, 400);
+        }
         const s = await getSession(key);
         if (!s) return json(res, { error: 'not found' }, 404);
         if (m[2] !== undefined) {

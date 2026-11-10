@@ -51,8 +51,8 @@
   };
 
   // ---------- formatting ----------
-  const esc = (s) =>
-    String(s ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
+  // esc() and md() live in markdown.js so tests can fuzz them; see that file for the safety rules.
+  const { esc, md } = window.BlackboxMarkdown;
   const money = (usd) => {
     if (!isFinite(usd)) return '—';
     if (usd === 0) return '$0';
@@ -110,94 +110,6 @@
     return parts[parts.length - 1] || '(unknown)';
   };
   const activeMs = (s) => (typeof s.activeMs === 'number' ? s.activeMs : Math.max(0, s.endedAt - s.startedAt));
-
-  // ---------- tiny safe markdown ----------
-  function inline(s) {
-    // s is already escaped
-    return s
-      .replace(/`([^`\n]+)`/g, '<code>$1</code>')
-      .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
-      .replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,!?:;]|$)/g, '$1<em>$2</em>')
-      .replace(/\[([^\]\n]+)\]\((https?:\/\/[^\s)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
-      .replace(/(^|[\s(])(https?:\/\/[^\s<)]+)/g, '$1<a href="$2" target="_blank" rel="noopener noreferrer">$2</a>');
-  }
-  function md(src) {
-    const text = String(src || '').replace(/\r/g, '');
-    const out = [];
-    const parts = text.split(/^```[^\n]*\n?/m);
-    // even = prose, odd = code
-    for (let i = 0; i < parts.length; i++) {
-      if (i % 2 === 1) {
-        out.push('<pre><code>' + esc(parts[i].replace(/\n$/, '')) + '</code></pre>');
-        continue;
-      }
-      const lines = parts[i].split('\n');
-      let para = [];
-      let list = null;
-      let table = null;
-      const flushPara = () => {
-        if (para.length) out.push('<p>' + para.map((l) => inline(esc(l))).join('<br>') + '</p>');
-        para = [];
-      };
-      const flushList = () => {
-        if (list) out.push('<' + list.tag + '>' + list.items.map((x) => '<li>' + inline(esc(x)) + '</li>').join('') + '</' + list.tag + '>');
-        list = null;
-      };
-      const flushTable = () => {
-        if (table) {
-          const rows = table.filter((r) => !/^\s*\|?\s*:?-{2,}/.test(r));
-          const cells = (r) => r.replace(/^\s*\|/, '').replace(/\|\s*$/, '').split('|');
-          out.push(
-            '<table>' +
-              rows
-                .map((r, ri) => '<tr>' + cells(r).map((c) => (ri === 0 ? '<th>' : '<td>') + inline(esc(c.trim())) + (ri === 0 ? '</th>' : '</td>')).join('') + '</tr>')
-                .join('') +
-              '</table>',
-          );
-        }
-        table = null;
-      };
-      for (const line of lines) {
-        const h = /^(#{1,6})\s+(.*)$/.exec(line);
-        const li = /^\s*(?:[-*+]|(\d+)[.)])\s+(.*)$/.exec(line);
-        if (/^\s*\|.*\|\s*$/.test(line)) {
-          flushPara();
-          flushList();
-          (table = table || []).push(line);
-          continue;
-        }
-        flushTable();
-        if (!line.trim()) {
-          flushPara();
-          flushList();
-        } else if (h) {
-          flushPara();
-          flushList();
-          const lvl = Math.min(4, h[1].length + 1);
-          out.push('<h' + lvl + '>' + inline(esc(h[2])) + '</h' + lvl + '>');
-        } else if (li) {
-          flushPara();
-          const tag = li[1] ? 'ol' : 'ul';
-          if (!list || list.tag !== tag) {
-            flushList();
-            list = { tag, items: [] };
-          }
-          list.items.push(li[2]);
-        } else if (/^>\s?/.test(line)) {
-          flushPara();
-          flushList();
-          out.push('<blockquote>' + inline(esc(line.replace(/^>\s?/, ''))) + '</blockquote>');
-        } else {
-          flushList();
-          para.push(line);
-        }
-      }
-      flushPara();
-      flushList();
-      flushTable();
-    }
-    return out.join('');
-  }
 
   // ---------- API ----------
   async function api(path) {
@@ -1337,9 +1249,9 @@
     const hasDeepseek = st.groups.agent.some((r) => r.key === 'DeepSeek Harness');
     body.innerHTML = `
       <div class="kpis">
-        ${kpi('Spend', money(o.usd), Math.round(o.recordedShare * 100) + '% recorded, rest estimated')}
+        ${kpi('Spend', money(o.usd), Math.round(o.recordedShare * 100) + '% recorded by agents', 'The rest is estimated from token counts and list prices')}
         ${kpi('Tokens', tok(totalTokens(o.usage)), Math.round(o.cacheHitRate * 100) + '% from cache')}
-        ${kpi('Sessions', num(o.sessions), (o.subagents ? '+' + num(o.subagents) + ' sub-agents · ' : '') + dur(o.durationMs) + ' active')}
+        ${kpi('Sessions', num(o.sessions), o.subagents ? `+${num(o.subagents)} sub-agent${o.subagents > 1 ? 's' : ''}` : dur(o.durationMs) + ' active', `${dur(o.durationMs)} of active time`)}
         ${kpi('Prompts', num(o.prompts), money(o.costPerPrompt) + ' / prompt')}
         ${kpi('Tool calls', num(o.toolCalls), o.toolCalls ? ((o.toolErrors / o.toolCalls) * 100).toFixed(1) + '% failed' : '')}
         ${kpi('Code written', '+' + tok(o.linesAdded), '−' + tok(o.linesRemoved) + ' · ' + num(o.filesChanged) + ' file edits')}

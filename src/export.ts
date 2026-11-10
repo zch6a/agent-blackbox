@@ -17,11 +17,13 @@ export type ExportFormat = 'html' | 'md' | 'json';
  * Works offline.
  */
 export async function exportHtml(session: Session, children: Session[] = []): Promise<string> {
-  const [html, css, js] = await Promise.all([
+  const [html, css, js, mdJs] = await Promise.all([
     readFile(uiFile('index.html'), 'utf8'),
     readFile(uiFile('style.css'), 'utf8'),
     readFile(uiFile('app.js'), 'utf8'),
+    readFile(uiFile('markdown.js'), 'utf8'),
   ]);
+  const inlineScript = (code: string) => `<script>${code.replace(/<\/script/gi, '<\\/script')}</script>`;
   // Sub-agents get a tighter output budget so a big family stays a shareable size.
   const boot = {
     mode: 'export',
@@ -34,7 +36,8 @@ export async function exportHtml(session: Session, children: Session[] = []): Pr
     .replace('<link rel="stylesheet" href="style.css" />', () => `<style>${css}</style>`)
     .replace('<link rel="icon" href="favicon.svg" type="image/svg+xml" />', '')
     .replace('<!--BOOT-->', () => `<script>window.__BLACKBOX__=${scriptJson(boot)}</script>`)
-    .replace('<script src="app.js"></script>', () => `<script>${js.replace(/<\/script/gi, '<\\/script')}</script>`);
+    .replace('<script src="markdown.js"></script>', () => inlineScript(mdJs))
+    .replace('<script src="app.js"></script>', () => inlineScript(js));
 }
 
 function fence(text: string, lang = ''): string {

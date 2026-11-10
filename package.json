@@ -1,6 +1,6 @@
 {
   "name": "agent-blackbox",
-  "version": "0.3.0",
+  "version": "1.0.0",
   "description": "A flight recorder for AI coding agents. Replay every Claude Code, Codex, OpenCode and DeepSeek Harness session: timeline, tool calls, diffs, tokens and cost. Local-only, zero dependencies.",
   "keywords": [
     "claude-code",

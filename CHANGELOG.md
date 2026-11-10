@@ -2,6 +2,22 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [1.0.0] — 2026-11-10
+
+### Security
+
+- The Markdown renderer and escaping live in `ui/markdown.js` and are fuzzed in the test suite (known attacks, 3,000 random hostile inputs, ReDoS-shaped inputs).
+- Autolinks no longer absorb escaped `<`, `>` or quotes, and need a real host.
+
+### Fixed
+
+- A malformed session key returns 400 instead of 500.
+- Insights captions no longer truncate.
+
+### Tested
+
+- Half-written, empty, binary and corrupt logs are skipped without errors; a log deleted while the UI is open gives a clean 404.
+
 ## [0.3.0] — 2026-11-10
 
 ### Added
