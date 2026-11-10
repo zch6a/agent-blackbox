@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <title>agent-blackbox</title>
+    <link rel="icon" href="favicon.svg" type="image/svg+xml" />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="topbar">
+        <a class="brand" href="#/" aria-label="agent-blackbox home">
+          <svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><rect x="2.5" y="2.5" width="19" height="19" rx="5" fill="none" stroke="currentColor" stroke-width="2"/><circle cx="12" cy="12" r="4" fill="var(--accent)"/></svg>
+          <span>agent-blackbox</span>
+        </a>
+        <nav class="tabs" id="nav">
+          <a href="#/" data-view="sessions">Sessions</a>
+          <a href="#/insights" data-view="insights">Insights</a>
+        </nav>
+        <div class="spacer"></div>
+        <span class="badge local" title="Everything is read from local log files. Nothing is uploaded.">● local only</span>
+        <button class="icon-btn" id="theme" title="Toggle theme (t)" aria-label="Toggle theme">◐</button>
+      </header>
+      <main id="main"><div class="boot">Reading your agent logs…</div></main>
+    </div>
+    <div id="tooltip" role="tooltip"></div>
+    <!--BOOT-->
+    <script src="app.js"></script>
+  </body>
+</html>

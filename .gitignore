@@ -1,0 +1,10 @@
+node_modules/
+dist/
+*.tgz
+.DS_Store
+Thumbs.db
+coverage/
+# exported replays and local logs must never be committed by accident
+*.blackbox.html
+/exports/
+.claude/

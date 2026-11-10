@@ -1,0 +1,46 @@
+{
+  "name": "agent-blackbox",
+  "version": "0.1.0",
+  "description": "A flight recorder for AI coding agents. Replay every Claude Code, Codex, OpenCode and DeepSeek Harness session: timeline, tool calls, diffs, tokens and cost. Local-only, zero dependencies.",
+  "keywords": [
+    "claude-code",
+    "codex",
+    "opencode",
+    "deepseek",
+    "ai-agent",
+    "coding-agent",
+    "observability",
+    "token-usage",
+    "cost",
+    "replay",
+    "cli"
+  ],
+  "license": "MIT",
+  "type": "module",
+  "bin": {
+    "blackbox": "dist/bin.js",
+    "agent-blackbox": "dist/bin.js"
+  },
+  "files": [
+    "dist",
+    "ui",
+    "README.md",
+    "README.zh-CN.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=22.15"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "dev": "node src/bin.ts",
+    "test": "node --test --test-reporter=spec \"test/**/*.test.ts\"",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "check": "npm run typecheck && npm test",
+    "prepublishOnly": "npm run check && npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "typescript": "^7.0.2"
+  }
+}
