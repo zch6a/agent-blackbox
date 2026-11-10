@@ -397,7 +397,7 @@
       return;
     }
     if (!S.sessions.length) {
-      el.innerHTML = `<div class="empty"><h2>No sessions found</h2>agent-blackbox reads logs from Claude Code, Codex, OpenCode and DeepSeek Harness.<br/>Run <code>blackbox doctor</code> to see where it looked.</div>`;
+      el.innerHTML = `<div class="empty"><h2>No sessions found</h2>agent-blackbox reads logs from Claude Code, Codex, OpenCode and DeepSeek Harness.<br/>Run <code>blackbox doctor</code> to see where it looked, or <code>blackbox demo</code> to try it on sample sessions.</div>`;
       return;
     }
     const list = filtered();
@@ -475,6 +475,8 @@
   // ---------- session detail ----------
   async function openSession(key, preloaded) {
     stopReplay();
+    const pill = $('#live-pill');
+    if (pill) pill.remove();
     S.key = key || (preloaded && preloaded.key);
     $$('.s-item').forEach((x) => {
       const on = x.dataset.key === S.key;
@@ -1436,6 +1438,33 @@
     }
   });
 
+  function showLivePill(sum) {
+    let pill = $('#live-pill');
+    if (!pill) {
+      pill = document.createElement('button');
+      pill.id = 'live-pill';
+      pill.className = 'live-pill';
+      pill.addEventListener('click', () => {
+        pill.remove();
+        const key = S.key;
+        const tab = S.opts.tab;
+        openSession(key).then(() => {
+          if (S.key !== key) return;
+          S.opts.tab = tab;
+          renderTab();
+          if (tab === 'timeline' && S.tl) {
+            renderMore(S.tl.vis.length - 1);
+            const d = $('#detail');
+            d.scrollTop = d.scrollHeight;
+          }
+        });
+      });
+      document.body.appendChild(pill);
+    }
+    const more = Math.max(0, sum.toolCalls - S.data.toolCalls);
+    pill.innerHTML = `<span class="dot-live"></span> New activity${more ? ` · ${num(more)} more tool call${more > 1 ? 's' : ''}` : ''} — <b>update</b>`;
+  }
+
   /** Quietly pick up new and updated sessions while the tab is visible. */
   async function backgroundRefresh() {
     if (document.visibilityState !== 'visible' || !S.loaded) return;
@@ -1447,6 +1476,9 @@
       const scroll = $('#list') && $('#list').scrollTop;
       renderList();
       if ($('#list')) $('#list').scrollTop = scroll;
+      // The open session grew (agent still running): offer an update instead of yanking the view.
+      const now = S.data && summaryOf(S.data.key);
+      if (now && now.endedAt > S.data.endedAt) showLivePill(now);
     } catch {
       /* server stopped: keep showing what we have */
     }

@@ -49,6 +49,15 @@ Things every adapter must get right:
 - **`input` tokens exclude cached tokens.** Normalize if the provider reports them inclusively (OpenAI does).
 - **Never throw on a weird line.** Logs get truncated mid-write; skip what you do not understand.
 
+## Screenshots and the replay GIF
+
+Everything in `docs/` is generated from the fictional demo data, never from real logs:
+
+```bash
+node src/bin.ts demo --port 4778 --no-open   # terminal 1
+node scripts/record-replay.mjs docs/replay.gif   # terminal 2 (needs Chrome and ffmpeg)
+```
+
 ## Prices
 
 Prices live in `src/pricing.ts` with the date they were last reviewed (`PRICES_UPDATED`). When updating, please link the official pricing page in your PR.

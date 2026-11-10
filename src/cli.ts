@@ -179,7 +179,7 @@ async function cmdList(v: Values): Promise<void> {
   if (total > list.length) notes.push(`${list.length} of ${total} sessions shown · --all or -n <count> for more`);
   if (hidden) notes.push(`${plural(hidden, 'sub-agent session')} hidden · --subagents to include`);
   if (notes.length) console.log(c.dim('\n' + notes.join('\n')));
-  else if (!total) console.log(c.dim('\nRun `blackbox doctor` to see where agent-blackbox looked.'));
+  else if (!total) console.log(c.dim('\nRun `blackbox doctor` to see where agent-blackbox looked, or `blackbox demo` to try it on sample sessions.'));
 }
 
 async function cmdShow(v: Values, query: string | undefined): Promise<void> {

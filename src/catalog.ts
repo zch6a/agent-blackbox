@@ -301,7 +301,7 @@ export class AmbiguousSessionError extends Error {
  */
 export async function resolveSession(query: string, opts: CatalogOptions = {}): Promise<SessionRef> {
   const refs = await discover(opts);
-  if (!refs.length) throw new SessionNotFoundError('No sessions found. Run `blackbox doctor` to see where agent-blackbox looked.');
+  if (!refs.length) throw new SessionNotFoundError('No sessions found. Run `blackbox doctor` to see where agent-blackbox looked, or `blackbox demo` to try it on sample sessions.');
   const q = query.trim();
   const nth = /^(?:last|latest)$/i.test(q) ? 1 : /^-(\d+)$/.exec(q) ? Number(/^-(\d+)$/.exec(q)![1]) : 0;
   if (nth) {

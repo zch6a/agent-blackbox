@@ -50,6 +50,10 @@ Every coding agent already writes a detailed log to disk. They are just unreadab
 
 <img src="docs/screenshot-insights.png" alt="The Insights page: total spend, tokens, sessions, prompts, tool calls, a daily spend chart, a privacy panel and breakdowns by agent and model" width="900" />
 
+**Replay** steps through a session the way it happened — the timeline fills in, the clock and running cost tick up:
+
+<img src="docs/replay.gif" alt="Replaying a session: events appear one by one while the replay bar shows the clock, progress and running cost" width="900" />
+
 No agent installed yet? `npx agent-blackbox demo` opens the UI on a set of fictional sessions (the screenshots above are from it).
 
 ## Quick start

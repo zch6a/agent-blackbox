@@ -36,6 +36,46 @@ export function projectName(cwd: string): string {
   return basename(cwd.replace(/[\\/]+$/, '')) || cwd;
 }
 
+/** One key per directory: `F:\a\b`, `F:/a/b/` and `f:\a\b` are the same project. */
+function dirKey(cwd: string): string {
+  const p = cwd.replace(/\\/g, '/').replace(/\/+$/, '');
+  return /^[a-z]:\//i.test(p) ? p.toLowerCase() : p;
+}
+
+/**
+ * Short, unique labels for project directories: the folder name, plus as many
+ * parent folders as needed when two different directories share a name
+ * (`work/api` vs `personal/api`).
+ */
+export function projectLabels(cwds: string[]): Map<string, string> {
+  const dirs = new Map<string, string[]>(); // key -> path segments
+  for (const cwd of cwds) {
+    if (!cwd) continue;
+    const key = dirKey(cwd);
+    if (!dirs.has(key)) dirs.set(key, cwd.replace(/\\/g, '/').replace(/\/+$/, '').split('/').filter(Boolean));
+  }
+  const depth = new Map<string, number>([...dirs.keys()].map((k) => [k, 1]));
+  const label = (k: string) => (dirs.get(k) ?? []).slice(-(depth.get(k) ?? 1)).join('/');
+  for (let round = 0; round < 6; round++) {
+    const byLabel = new Map<string, string[]>();
+    for (const k of dirs.keys()) byLabel.set(label(k), [...(byLabel.get(label(k)) ?? []), k]);
+    let changed = false;
+    for (const keys of byLabel.values()) {
+      if (keys.length < 2) continue;
+      for (const k of keys) {
+        if ((depth.get(k) ?? 1) < (dirs.get(k)?.length ?? 1)) {
+          depth.set(k, (depth.get(k) ?? 1) + 1);
+          changed = true;
+        }
+      }
+    }
+    if (!changed) break;
+  }
+  const out = new Map<string, string>();
+  for (const cwd of cwds) out.set(cwd, cwd ? label(dirKey(cwd)) || cwd : '(unknown)');
+  return out;
+}
+
 function weekKey(ms: number): string {
   const d = new Date(ms);
   const day = (d.getDay() + 6) % 7; // Monday = 0
@@ -76,6 +116,7 @@ export function fillDays(rows: StatRow[], maxDays = 800): StatRow[] {
 
 export function aggregate(sessions: SessionSummary[], by: GroupBy, opts: { fillGaps?: boolean } = {}): StatRow[] {
   const rows = new Map<string, StatRow>();
+  let labels: Map<string, string> | undefined;
   // A recorded cost covers a whole family (parent + sub-agents whose cost is inside it).
   // Spread it over every member's models in proportion to their estimated cost.
   const estOf = (s: SessionSummary) => Object.values(s.modelUsage).reduce((a, m) => a + m.usd, 0);
@@ -110,7 +151,7 @@ export function aggregate(sessions: SessionSummary[], by: GroupBy, opts: { fillG
         add(get(AGENT_LABELS[s.agent]), s);
         break;
       case 'project':
-        add(get(projectName(s.cwd)), s);
+        add(get((labels ??= projectLabels(sessions.map((x) => x.cwd))).get(s.cwd) ?? projectName(s.cwd)), s);
         break;
       case 'model': {
         const entries = Object.entries(s.modelUsage);

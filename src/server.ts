@@ -214,11 +214,21 @@ export async function serve(opts: ServeOptions = {}): Promise<RunningServer> {
   // Start indexing right away so the first page load is fast.
   const indexed = getSummaries(false);
   indexed.catch(() => {});
+  // Keep the index fresh in the background so requests never wait for, or miss, new activity.
+  // Unchanged files come from the cache, so a rescan is just a directory walk plus the logs that grew.
+  const rescan = setInterval(() => {
+    if (!inflight) getSummaries(true).catch(() => {});
+  }, 15_000);
+  rescan.unref();
   opts.onReady?.(url);
   if (opts.open) openBrowser(url);
   return {
     url,
     indexed,
-    close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+    close: () =>
+      new Promise<void>((resolve) => {
+        clearInterval(rescan);
+        server.close(() => resolve());
+      }),
   };
 }

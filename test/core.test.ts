@@ -8,10 +8,11 @@ import { activeTime, SessionBuilder } from '../src/builder.ts';
 import { errorBrief, toolBrief } from '../src/describe.ts';
 import { fromApplyPatch, fromReplace, fromUnifiedDiff, fromWrite, guessEdits } from '../src/edits.ts';
 import { duration, fit, money, parseSince, tokens, width } from '../src/format.ts';
+import { resolvePager } from '../src/pager.ts';
 import { scriptJson } from '../src/payload.ts';
 import { costOf, priceFor, resetPricingCache } from '../src/pricing.ts';
 import { makeRedactor } from '../src/redact.ts';
-import { aggregate, overview } from '../src/stats.ts';
+import { aggregate, overview, projectLabels } from '../src/stats.ts';
 import { VERSION } from '../src/version.ts';
 import { decompressZstdFrames, splitZstdFrames, ZstdFormatError } from '../src/zstd.ts';
 import { ref, zstdFrames } from './helpers.ts';
@@ -246,6 +247,28 @@ describe('stats', () => {
       ],
     );
     assert.equal(overview([s]).usd, 10);
+  });
+});
+
+describe('project labels', () => {
+  it('adds parent folders only where names collide', () => {
+    const m = projectLabels(['/home/a/work/api', '/home/a/personal/api', '/home/a/blog', 'F:\\Code\\blog', 'f:/code/blog/', '']);
+    assert.equal(m.get('/home/a/work/api'), 'work/api');
+    assert.equal(m.get('/home/a/personal/api'), 'personal/api');
+    assert.equal(m.get('/home/a/blog'), 'a/blog');
+    // the same Windows directory spelled two ways is one project
+    assert.equal(m.get('F:\\Code\\blog'), m.get('f:/code/blog/'));
+    assert.notEqual(m.get('F:\\Code\\blog'), m.get('/home/a/blog'));
+    assert.equal(m.get(''), '(unknown)');
+  });
+});
+
+describe('pager', () => {
+  it('respects PAGER and BLACKBOX_PAGER, and cat disables paging', () => {
+    assert.equal(resolvePager({ PAGER: 'cat' }), null);
+    assert.equal(resolvePager({ PAGER: '' }), null);
+    assert.equal(resolvePager({ PAGER: 'more' }), 'more');
+    assert.equal(resolvePager({ PAGER: 'more', BLACKBOX_PAGER: 'bat --paging=always' }), 'bat --paging=always');
   });
 });
 

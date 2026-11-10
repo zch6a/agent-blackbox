@@ -2,6 +2,19 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [0.2.1] — 2026-11-10
+
+### Added
+
+- The UI offers to update an open session when the agent is still writing to it; the server keeps its index fresh in the background.
+- Replay GIF in the README, recorded from demo data with `scripts/record-replay.mjs`.
+
+### Fixed
+
+- The pager works on Windows (finds Git for Windows' `less`) and never prints a "command not found" error.
+- Different projects with the same folder name are no longer merged in stats and Insights.
+- Empty states point to `blackbox demo`.
+
 ## [0.2.0] — 2026-11-10
 
 ### Added

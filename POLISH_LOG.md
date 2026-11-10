@@ -38,10 +38,21 @@ The big finding of this round was a **cost bug**: Claude Code's `cost-state` is 
 
 64 tests passing.
 
-## Round 3 — backlog
+## Round 3 — v0.2.1 (2026-11-10)
 
-- [ ] README: a short animated GIF of replay (scripted headless capture of frames).
-- [ ] Session list for 1,000+ sessions: measure render time; virtualize if needed.
-- [ ] `stats --by project` merges different projects with the same folder name; disambiguate.
-- [ ] Live sessions: refresh the open session when its log grows (tail the file).
-- [ ] Try the pager in a real terminal.
+- **Pager, verified in a real terminal:** Windows has no `less` on PATH, so the default pager would have failed with a "not recognized" error before falling back. The pager is now resolved first (PATH, then Git for Windows' bundled `less`), and `PAGER`/`BLACKBOX_PAGER`/`cat` behave as documented. Ran `show` in a real terminal tab: output pages through `less` with the `:` prompt.
+- **Projects:** `stats --by project` and Insights merged different directories that share a folder name (`work/api` and `personal/api`). Labels now add parent folders only where names collide, and the same Windows directory spelled differently (`F:\a` vs `f:/a/`) is one project.
+- **Live sessions:** the server now rescans in the background every 15 s (unchanged logs come from the cache), and the UI shows a "New activity — update" pill when the open session grows instead of yanking the view. Tested on this very session while it was running: 588 → 591 tool calls, scrolled to the newest event. Found along the way: the old stale-while-revalidate meant the UI only saw changes a full poll late.
+- **Replay GIF:** `scripts/record-replay.mjs` drives headless Chrome over the DevTools protocol (Node's built-in WebSocket, no dependencies) and encodes with ffmpeg; `docs/replay.gif` is in both READMEs. First takes were wrong (4× finished the demo in under 4 s, leaving a static GIF); now 1×, 16 s.
+- **First run:** with no logs at all, `list`, `show` and the UI suggest `blackbox demo`.
+- **Measured, no change needed:** with all 1,041 sessions shown the list re-renders in 13 ms and search filters in 1.3 ms (150 rows at a time), so virtualization is not worth its complexity.
+
+66 tests passing.
+
+## Round 4 — backlog
+
+- [ ] Export: include sub-agent sessions in an exported HTML replay (currently the parent only).
+- [ ] Insights: a "where the time went" view — slowest tools and longest waits.
+- [ ] Windows paths in `show` for Codex `apply_patch` (relative paths: resolve against cwd for display).
+- [ ] Re-read README end to end as a first-time visitor; trim.
+- [ ] Fresh-install test: `npm pack` and run the tarball in an empty directory.

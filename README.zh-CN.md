@@ -50,6 +50,10 @@ npx agent-blackbox
 
 <img src="docs/screenshot-insights.png" alt="洞察页：总花费、token、会话数、提问数、工具调用、每日花费图、隐私面板，以及按 Agent 和模型的拆分" width="900" />
 
+**回放**按会话实际发生的顺序逐步重现——时间线一条条展开，时钟和累计费用随之增长：
+
+<img src="docs/replay.gif" alt="回放会话：事件逐条出现，回放条显示时间、进度和累计费用" width="900" />
+
 还没装任何 Agent？`npx agent-blackbox demo` 会用一组虚构的示例会话打开界面（上面的截图就来自它）。
 
 ## 快速开始
