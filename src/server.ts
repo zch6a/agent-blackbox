@@ -168,9 +168,10 @@ export async function serve(opts: ServeOptions = {}): Promise<RunningServer> {
         const all = await getSummaries(false);
         const since = Number(url.searchParams.get('since') ?? 0);
         const agent = url.searchParams.get('agent');
-        const list = all.filter((s) => (!since || s.startedAt >= since) && (!agent || s.agent === agent));
+        // A session belongs to the range if it was active in it, not only if it started in it.
+        const list = all.filter((s) => (!since || s.endedAt >= since) && (!agent || s.agent === agent));
         const groups: Partial<Record<GroupBy, ReturnType<typeof aggregate>>> = {};
-        for (const by of GROUPS) groups[by] = aggregate(list, by);
+        for (const by of GROUPS) groups[by] = aggregate(list, by, { fillGaps: true });
         const top = [...list].sort((a, b) => b.cost.usd - a.cost.usd).slice(0, 12);
         return json(res, { overview: overview(list), groups, top });
       }

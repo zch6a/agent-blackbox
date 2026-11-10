@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [0.1.1] — 2026-11-10
+
+### Changed
+
+- Cold indexing is about 2.5× faster: bookkeeping lines are skipped before parsing and uncached sessions are parsed on worker threads.
+- Insights counts sessions that were active in the selected range, and the daily chart shows days without sessions.
+- Shorter MCP tool names, millisecond durations, replay defaults to 1× and remembers its speed.
+- Phone layout: back link from a session to the list.
+
+### Added
+
+- `blackbox demo` and `--demo`: fictional sample sessions for every agent.
+- Codex thread names from `session_index.jsonl` are used as titles.
+- `exitCode` on tool events, so failures show `exit 2` instead of the first output line.
+
 ## [0.1.0] — 2026-11-10
 
 ### Added

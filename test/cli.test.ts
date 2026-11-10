@@ -47,6 +47,19 @@ describe('catalog', () => {
   });
 });
 
+describe('worker pool', () => {
+  it('produces the same summaries as in-process parsing', async () => {
+    const inProcess = await listSessions({ roots: catalogRoots(fx), cache: false });
+    process.env.BLACKBOX_WORKER_MIN_BYTES = '0';
+    try {
+      const pooled = await listSessions({ roots: catalogRoots(fx), cache: false });
+      assert.deepEqual(pooled, inProcess);
+    } finally {
+      delete process.env.BLACKBOX_WORKER_MIN_BYTES;
+    }
+  });
+});
+
 describe('cli', () => {
   it('list --json returns summaries without events', async () => {
     const { out, result } = await run('list', '--json');

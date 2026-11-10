@@ -55,7 +55,25 @@ function add(r: StatRow, s: SessionSummary, share = 1): void {
   r.durationMs += activeDuration(s);
 }
 
-export function aggregate(sessions: SessionSummary[], by: GroupBy): StatRow[] {
+/** Insert empty rows for days without sessions so a chart's time axis is continuous. */
+export function fillDays(rows: StatRow[], maxDays = 800): StatRow[] {
+  const sorted = [...rows].sort((a, b) => a.key.localeCompare(b.key));
+  if (sorted.length < 2) return sorted;
+  const byKey = new Map(sorted.map((r) => [r.key, r]));
+  const [y, m, d] = (sorted[0] as StatRow).key.split('-').map(Number) as [number, number, number];
+  const last = (sorted[sorted.length - 1] as StatRow).key;
+  const out: StatRow[] = [];
+  const cur = new Date(y, m - 1, d, 12); // noon: immune to DST jumps
+  for (let i = 0; i < maxDays; i++) {
+    const key = localDate(cur.getTime());
+    out.push(byKey.get(key) ?? row(key));
+    if (key >= last) break;
+    cur.setDate(cur.getDate() + 1);
+  }
+  return out;
+}
+
+export function aggregate(sessions: SessionSummary[], by: GroupBy, opts: { fillGaps?: boolean } = {}): StatRow[] {
   const rows = new Map<string, StatRow>();
   const get = (k: string) => {
     let r = rows.get(k);
@@ -105,6 +123,7 @@ export function aggregate(sessions: SessionSummary[], by: GroupBy): StatRow[] {
     }
   }
   const list = [...rows.values()];
+  if (by === 'day' && opts.fillGaps) return fillDays(list);
   if (by === 'day' || by === 'week' || by === 'month') return list.sort((a, b) => a.key.localeCompare(b.key));
   if (by === 'tool') return list.sort((a, b) => b.toolCalls - a.toolCalls);
   return list.sort((a, b) => b.usd - a.usd || b.tokens - a.tokens);

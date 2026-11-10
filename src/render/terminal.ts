@@ -1,6 +1,6 @@
 import { errorBrief, toolBrief } from '../describe.ts';
 import { ago, bar, c, clock, duration, fit, localDate, money, pad as padTo, plural, table, tokens, width } from '../format.ts';
-import { activeDuration, aggregate, overview, projectName, type GroupBy, type StatRow } from '../stats.ts';
+import { activeDuration, aggregate, overview, projectName, wallDuration, type GroupBy, type StatRow } from '../stats.ts';
 import { AGENT_LABELS, totalTokens, type Cost, type Session, type SessionEvent, type SessionSummary } from '../types.ts';
 import { oneLine, tildify } from '../util.ts';
 
@@ -110,7 +110,7 @@ export function renderHeader(s: SessionSummary): string {
     c.dim(
       [
         tildify(s.cwd) || '(no cwd)',
-        `${localDate(s.startedAt)} ${clock(s.startedAt)} → ${clock(s.endedAt)} (${duration(activeDuration(s))})`,
+        `${localDate(s.startedAt)} ${clock(s.startedAt)} → ${s.endedAt - s.startedAt > 86400_000 ? localDate(s.endedAt) + ' ' : ''}${clock(s.endedAt)} (${duration(activeDuration(s))} active${wallDuration(s) - activeDuration(s) > 60_000 ? ` over ${duration(wallDuration(s))}` : ''})`,
         s.models.join(', ') || 'unknown model',
       ].join(' · '),
     ),

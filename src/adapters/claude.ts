@@ -45,9 +45,25 @@ export const claudeAdapter: Adapter = {
   },
 
   async load(ref) {
-    return parseClaude(ref, readJsonl(ref.path));
+    return parseClaude(ref, readJsonl(ref.path, SKIP_PREFIXES));
   },
 };
+
+/**
+ * Bookkeeping lines that never affect the timeline. `api-request-blob` alone is
+ * about a quarter of a large log (it stores whole API request bodies).
+ */
+const SKIP_PREFIXES = [
+  '{"type":"api-request',
+  '{"type":"file-history',
+  '{"type":"queue-operation"',
+  '{"type":"last-prompt"',
+  '{"type":"isolation-latch"',
+  '{"type":"atis-latch"',
+  '{"type":"agent-name"',
+  '{"type":"mode"',
+  '{"type":"relocated"',
+];
 
 function claudeUsage(u: Record<string, unknown>): { usage: Usage; write1h: number } {
   const cc = obj(u.cache_creation);

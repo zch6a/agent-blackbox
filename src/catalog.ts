@@ -1,4 +1,6 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
+import { availableParallelism } from 'node:os';
+import { Worker } from 'node:worker_threads';
 import { dirname, join } from 'node:path';
 import { ADAPTERS, adapterFor } from './adapters/index.ts';
 import type { AgentKind, Session, SessionRef, SessionSummary } from './types.ts';
@@ -94,6 +96,65 @@ export function summarize(session: Session): SessionSummary {
   return summary;
 }
 
+/** Below this much uncached data, starting worker threads costs more than it saves. */
+const WORKER_THRESHOLD_BYTES = 48 * 1024 * 1024;
+
+/**
+ * Parse sessions on a small pool of worker threads, biggest files first so the
+ * pool does not end up waiting on one huge log. Returns the indices that still
+ * need parsing in the main thread (none if everything went well; all of them
+ * when the pool is not worth starting or workers are unavailable).
+ */
+async function parseInWorkers(
+  refs: SessionRef[],
+  onSummary: (k: number, s: SessionSummary) => void,
+  onError: (k: number) => void,
+): Promise<number[]> {
+  const all = refs.map((_, k) => k);
+  const bytes = refs.reduce((a, r) => a + r.sizeBytes, 0);
+  const size = Math.min(refs.length, Math.max(2, availableParallelism() - 1), 6);
+  const threshold = Number(process.env.BLACKBOX_WORKER_MIN_BYTES ?? WORKER_THRESHOLD_BYTES);
+  if (process.env.BLACKBOX_NO_WORKERS || bytes < threshold || size < 2) return all;
+  const script = new URL(`./index-worker${import.meta.url.endsWith('.ts') ? '.ts' : '.js'}`, import.meta.url);
+  const order = [...all].sort((a, b) => refs[b]!.sizeBytes - refs[a]!.sizeBytes);
+  const finished = new Set<number>();
+  let next = 0;
+  await new Promise<void>((resolve) => {
+    let alive = size;
+    const retire = () => {
+      if (--alive === 0) resolve();
+    };
+    for (let w = 0; w < size; w++) {
+      let worker: Worker;
+      try {
+        worker = new Worker(script);
+      } catch {
+        retire();
+        continue;
+      }
+      const feed = () => {
+        if (next >= order.length) {
+          void worker.terminate();
+          return;
+        }
+        const k = order[next++]!;
+        worker.postMessage({ i: k, ref: refs[k] });
+      };
+      worker.on('message', (m: { i: number; summary?: SessionSummary; error?: string }) => {
+        finished.add(m.i);
+        if (m.summary) onSummary(m.i, m.summary);
+        else onError(m.i);
+        feed();
+      });
+      // A crashed worker exits; the job it was on is not in `finished` and gets retried in the main thread.
+      worker.on('error', () => {});
+      worker.on('exit', retire);
+      feed();
+    }
+  });
+  return all.filter((k) => !finished.has(k));
+}
+
 /** Summaries for every session, newest first. Unchanged files are served from the cache. */
 export async function listSessions(opts: CatalogOptions = {}): Promise<SessionSummary[]> {
   const refs = await discover(opts);
@@ -101,23 +162,45 @@ export async function listSessions(opts: CatalogOptions = {}): Promise<SessionSu
   const cache = useCache ? await readCache() : { schema: CACHE_SCHEMA, version: VERSION, entries: {} as Record<string, CacheEntry> };
   let dirty = false;
   let done = 0;
-  const summaries = await mapLimit(refs, 4, async (ref) => {
+  const summaries: (SessionSummary | null)[] = new Array(refs.length).fill(null);
+  const todo: number[] = [];
+  refs.forEach((ref, i) => {
     const hit = cache.entries[ref.key];
-    let summary: SessionSummary | null = null;
     if (hit && hit.mtimeMs === ref.mtimeMs && hit.sizeBytes === ref.sizeBytes && hit.summary.path === ref.path) {
-      summary = hit.summary;
+      summaries[i] = hit.summary;
+      done++;
     } else {
-      try {
-        summary = summarize(await loadSession(ref));
-        cache.entries[ref.key] = { mtimeMs: ref.mtimeMs, sizeBytes: ref.sizeBytes, summary };
-        dirty = true;
-      } catch {
-        summary = null; // unreadable session: skip it rather than failing the whole list
-      }
+      todo.push(i);
+    }
+  });
+  if (done) opts.onProgress?.(done, refs.length);
+  const store = (i: number, summary: SessionSummary | null) => {
+    const ref = refs[i]!;
+    summaries[i] = summary;
+    if (summary) {
+      cache.entries[ref.key] = { mtimeMs: ref.mtimeMs, sizeBytes: ref.sizeBytes, summary };
+      dirty = true;
     }
     opts.onProgress?.(++done, refs.length);
-    return summary;
-  });
+  };
+  const failed = new Set<number>();
+  const pending = await parseInWorkers(
+    todo.map((i) => refs[i]!),
+    (k, summary) => store(todo[k]!, summary),
+    (k) => failed.add(todo[k]!),
+  );
+  // Whatever the workers did not finish (or when workers are not worth it) is parsed here.
+  await mapLimit(
+    pending.map((k) => todo[k]!).filter((i) => !failed.has(i)),
+    4,
+    async (i) => {
+      try {
+        store(i, summarize(await loadSession(refs[i]!)));
+      } catch {
+        store(i, null); // unreadable session: skip it rather than failing the whole list
+      }
+    },
+  );
   if (useCache) {
     // Drop entries for sessions that no longer exist.
     const live = new Set(refs.map((r) => r.key));

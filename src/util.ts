@@ -4,10 +4,15 @@ import { homedir } from 'node:os';
 import { join, sep } from 'node:path';
 import { createInterface } from 'node:readline';
 
-/** Stream a JSONL file line by line. Malformed lines are skipped, never fatal. */
-export async function* readJsonl(path: string): AsyncGenerator<Record<string, unknown>> {
-  const rl = createInterface({ input: createReadStream(path, { encoding: 'utf8' }), crlfDelay: Infinity });
-  for await (const line of rl) {
+/**
+ * Stream a JSONL file line by line. Malformed lines are skipped, never fatal.
+ * Lines starting with one of `skipPrefixes` are dropped *before* JSON.parse —
+ * a big win for logs full of bookkeeping lines we never look at.
+ */
+export async function* readJsonl(path: string, skipPrefixes: readonly string[] = []): AsyncGenerator<Record<string, unknown>> {
+  const rl = createInterface({ input: createReadStream(path, { encoding: 'utf8', highWaterMark: 1 << 20 }), crlfDelay: Infinity });
+  outer: for await (const line of rl) {
+    for (const p of skipPrefixes) if (line.startsWith(p)) continue outer;
     const parsed = parseJsonLine(line);
     if (parsed) yield parsed;
   }

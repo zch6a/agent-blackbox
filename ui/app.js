@@ -75,6 +75,7 @@
   const num = (n) => (n || 0).toLocaleString('en-US');
   const dur = (ms) => {
     if (!isFinite(ms) || ms <= 0) return '—';
+    if (ms < 1000) return Math.round(ms) + 'ms';
     const s = Math.round(ms / 1000);
     if (s < 60) return s + 's';
     const m = Math.floor(s / 60);
@@ -257,6 +258,7 @@
     const m = /^#\/s\/(.+)$/.exec(h);
     $$('#nav a').forEach((a) => a.classList.toggle('on', (a.dataset.view === 'insights') === h.startsWith('#/insights')));
     if (!LIVE) return openSession(null, BOOT.session);
+    if (!m) document.title = 'agent-blackbox';
     if (h.startsWith('#/insights')) {
       S.view = 'insights';
       return showInsights();
@@ -536,6 +538,7 @@
             ? `Estimated from token counts and list prices (${BOOT.pricesUpdated || ''})`
             : 'No usage data in this log';
     d.innerHTML = `<div class="detail-inner">
+      <a class="back" href="#/">← All sessions</a>
       <div class="crumbs"><span class="dot ${s.agent}"></span><span>${AGENTS[s.agent]}</span><span class="sep">/</span><span>${esc(project(s.cwd))}</span><span class="sep">/</span><span class="mono" data-tip="${esc(s.id)}">${esc(s.id.slice(0, 13))}</span></div>
       <h1 class="title">${esc(s.title)}</h1>
       <div class="subtitle"><span class="mono">${esc(home(s.cwd) || '—')}</span><span>${day(s.startedAt)} ${clock(s.startedAt)} → ${s.endedAt - s.startedAt > 864e5 ? day(s.endedAt) + ' ' : ''}${clock(s.endedAt)}</span><span>${esc(s.models.join(', ') || 'unknown model')}</span></div>
@@ -616,6 +619,7 @@
         renderTimeline();
       } else if (speed && S.replay) {
         S.replay.speed = Number(speed.dataset.speed);
+        store.set('replay-speed', S.replay.speed);
         syncReplay();
       }
     });
@@ -761,7 +765,7 @@
             ? '<span class="st">✓</span>'
             : '<span class="st pending" data-tip="No result recorded">…</span>';
         const took = e.endT && e.endT > e.t ? `<span class="dur">${dur(e.endT - e.t)}</span>` : '';
-        return `<div class="ev toolev${cls}" ${attrs}>${t}<details class="tool${e.isError ? ' err' : ''}${e.parentId ? ' nested' : ''}"><summary><span class="name" title="${esc(e.name)}">${esc(e.name)}</span><span class="brief">${esc(e.brief || '')}</span>${edits ? `<span class="ed">${edits}</span>` : ''}${took}${status}</summary></details></div>`;
+        return `<div class="ev toolev${cls}" ${attrs}>${t}<details class="tool${e.isError ? ' err' : ''}${e.parentId ? ' nested' : ''}"><summary>${toolName(e.name)}<span class="brief">${esc(e.brief || '')}</span>${edits ? `<span class="ed">${edits}</span>` : ''}${took}${status}</summary></details></div>`;
       }
       case 'usage':
         return `<div class="ev usage" ${attrs}>${t}<div class="note">${e.priced ? money(e.usd) : '$?'} · ${tok(totalTokens(e.usage))} tokens (in ${tok(e.usage.input)}, out ${tok(e.usage.output)}, cache ${tok(e.usage.cacheRead)}) · ${esc(e.model)}</div></div>`;
@@ -772,6 +776,13 @@
       default:
         return '';
     }
+  }
+
+  /** `mcp__github__create_issue` → "create_issue" with a dim "github" prefix; full name on hover. */
+  function toolName(name) {
+    const m = /^mcp__(.+?)__(.+)$/.exec(name);
+    const inner = m ? `<i>${esc(m[1])}</i>${esc(m[2])}` : esc(name);
+    return `<span class="name" title="${esc(name)}">${inner}</span>`;
   }
 
   function textBlock(text, clampAt = 1600) {
@@ -1062,7 +1073,7 @@
   // ---------- replay ----------
   function startReplay() {
     if (!S.data || !S.tl) return;
-    S.replay = { pos: 0, speed: S.replay ? S.replay.speed : 4, timer: 0 };
+    S.replay = { pos: 0, speed: store.get('replay-speed', 1), timer: 0 };
     $('#replay').classList.add('on');
     S._syncToolbar();
     $('#rp-range').max = String(Math.max(0, S.tl.vis.length - 1));
@@ -1238,7 +1249,7 @@
         ${kpi('Tool calls', num(o.toolCalls), o.toolCalls ? ((o.toolErrors / o.toolCalls) * 100).toFixed(1) + '% failed' : '')}
         ${kpi('Code written', '+' + tok(o.linesAdded), '−' + tok(o.linesRemoved) + ' · ' + num(o.filesChanged) + ' file edits')}
       </div>
-      <div class="chart"><div class="flight-head"><b>Daily spend</b><span class="spacer"></span><span>${days.length} active days · peak ${money(Math.max(...days.map((d) => d.usd)))}</span></div><svg id="daily"></svg></div>
+      <div class="chart"><div class="flight-head"><b>Daily spend</b><span class="spacer"></span><span>${days.filter((d) => d.sessions).length} active days · peak ${money(Math.max(...days.map((d) => d.usd)))}</span></div><svg id="daily"></svg></div>
       ${
         hasDeepseek
           ? `<h2>Privacy</h2><div class="panel" style="padding:14px"><div class="privacy"><span class="big">${uploaded ? '↑' : '✓'}</span><div>${
