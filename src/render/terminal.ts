@@ -50,7 +50,12 @@ export function renderList(sessions: SessionSummary[]): string {
   if (!sessions.length) return c.dim('No sessions match.');
   const idLen = uniquePrefixLength(sessions.map((s) => s.id));
   const rows = sessions.map((s) => {
-    const flags = [s.flags.includes('log-uploaded') ? c.red('↑') : '', s.flags.includes('subagent') ? c.dim('↳') : '', s.toolErrors ? c.red(`✗${s.toolErrors}`) : '']
+    const flags = [
+      s.flags.includes('log-uploaded') ? c.red('↑') : '',
+      s.children ? c.cyan(`⑂${s.children}`) : '',
+      s.flags.includes('subagent') ? c.dim('↳') : '',
+      s.toolErrors ? c.red(`✗${s.toolErrors}`) : '',
+    ]
       .filter(Boolean)
       .join(' ');
     return [
@@ -58,7 +63,7 @@ export function renderList(sessions: SessionSummary[]): string {
       (AGENT_COLOR[s.agent] ?? ((x: string) => x))(AGENT_SHORT[s.agent] ?? s.agent),
       ago(s.endedAt),
       duration(activeDuration(s)),
-      costLabel(s.cost),
+      s.costInParent ? c.dim('(in parent)') : costLabel(s.cost),
       tokens(totalTokens(s.usage)),
       String(s.toolCalls),
       flags,
@@ -90,6 +95,8 @@ export interface ShowOptions {
   errorsOnly?: boolean;
   /** Hide tool calls (just the conversation). */
   noTools?: boolean;
+  /** Sub-agent sessions spawned by this one (linked to the tool call that started them). */
+  children?: SessionSummary[];
 }
 
 function indentBody(text: string, full: boolean, pad: string, maxLines = 4): string {
@@ -124,6 +131,10 @@ export function renderHeader(s: SessionSummary): string {
       .filter(Boolean)
       .join(c.dim(' · ')),
   ];
+  if (s.parentKey) {
+    const parentId = s.parentKey.slice(s.parentKey.indexOf(':') + 1);
+    lines.push(c.dim(`↳ Sub-agent${s.agentName ? ` (${s.agentName})` : ''} of ${parentId}${s.costInParent ? ' — its cost is included in the parent’s' : ''}`));
+  }
   if (s.flags.includes('log-uploaded')) lines.push(c.red('↑ This session log was uploaded to the DeepSeek API (session-log delivery was enabled).'));
   if (s.flags.includes('incomplete')) lines.push(c.yellow('… The log ends mid-turn (still running, interrupted or crashed).'));
   return lines.join('\n');
@@ -133,6 +144,7 @@ export function renderSession(s: Session, opts: ShowOptions = {}): string {
   const out: string[] = [renderHeader(s), ''];
   const pad = ' '.repeat(21);
   let turnCost = 0;
+  const childByTool = new Map((opts.children ?? []).filter((ch) => ch.parentToolId).map((ch) => [ch.parentToolId as string, ch]));
   for (const ev of s.events as SessionEvent[]) {
     const time = c.dim(clock(ev.t));
     switch (ev.kind) {
@@ -141,7 +153,7 @@ export function renderSession(s: Session, opts: ShowOptions = {}): string {
         if (turnCost && opts.cost) out.push(`${pad}${c.dim(`turn cost ${money(turnCost)}`)}`);
         turnCost = 0;
         out.push('');
-        out.push(`${time}  ${c.green(c.bold('❯ you'))}     ${indentBody(ev.text + (ev.images ? ` [${ev.images} image${ev.images > 1 ? 's' : ''}]` : ''), !!opts.full, pad, 8)}`);
+        out.push(`${time}  ${ev.from === 'agent' ? c.magenta(c.bold('❯ task')) + ' ' : c.green(c.bold('❯ you')) + '  '}   ${indentBody(ev.text + (ev.images ? ` [${ev.images} image${ev.images > 1 ? 's' : ''}]` : ''), !!opts.full, pad, 8)}`);
         break;
       case 'assistant':
         if (opts.errorsOnly) break;
@@ -162,6 +174,8 @@ export function renderSession(s: Session, opts: ShowOptions = {}): string {
         const brief = toolBrief(ev.name, ev.input, 200);
         const budget = (process.stdout.columns || 120) - 21 - width(nest) - 17 - width(edits) - 2;
         out.push(`${time}  ${c.magenta('⚙')} ${nest}${c.magenta(padTo(name, 13))} ${fit(brief, Math.max(20, budget))}${edits ? '  ' + edits : ''}  ${status}${took}`);
+        const spawned = childByTool.get(ev.id);
+        if (spawned) out.push(`${pad}${c.cyan('⑂ sub-agent')} ${c.dim(spawned.id)}  ${fit(oneLine(spawned.title), 60)}  ${c.dim(`${spawned.toolCalls} tools · ${spawned.costInParent ? 'cost in parent' : costLabel(spawned.cost)}`)}`);
         if (opts.full && ev.edits) for (const e of ev.edits) if (e.diff) out.push(colorDiff(e.diff, pad));
         if (ev.isError && (opts.full || opts.errorsOnly)) out.push(pad + c.red(indentBody(ev.output, !!opts.full, pad, 6)));
         break;
@@ -183,6 +197,16 @@ export function renderSession(s: Session, opts: ShowOptions = {}): string {
     }
   }
   if (turnCost && opts.cost) out.push(`${pad}${c.dim(`turn cost ${money(turnCost)}`)}`);
+  const kids = opts.children ?? [];
+  if (kids.length && !opts.errorsOnly) {
+    out.push('', c.bold(`Sub-agents (${kids.length})`) + c.dim('  — open one with `blackbox show <id>`'));
+    const idLen = uniquePrefixLength(kids.map((k) => k.id), 12);
+    for (const k of kids) {
+      out.push(
+        `  ${c.dim(shortId(k.id, idLen))}  ${padTo(fit(k.agentName ?? '', 14), 14)}  ${fit(oneLine(k.title), 56)}  ${c.dim(`${k.toolCalls} tools${k.toolErrors ? ` (${k.toolErrors} failed)` : ''} · ${k.costInParent ? 'cost in parent' : costLabel(k.cost)}`)}`,
+      );
+    }
+  }
   return out.join('\n');
 }
 
@@ -197,7 +221,7 @@ export function renderStats(sessions: SessionSummary[], by: GroupBy): string {
   const o = overview(sessions);
   const out: string[] = [];
   out.push(
-    `${c.bold(money(o.usd))} across ${c.bold(String(o.sessions))} sessions · ${tokens(totalTokens(o.usage))} tokens · ${Math.round(o.cacheHitRate * 100)}% cache hits · ${o.prompts} prompts · ${o.toolCalls} tool calls (${o.toolCalls ? ((o.toolErrors / o.toolCalls) * 100).toFixed(1) : 0}% failed)`,
+    `${c.bold(money(o.usd))} across ${c.bold(plural(o.sessions, 'session'))}${o.subagents ? c.dim(` (+${plural(o.subagents, 'sub-agent')})`) : ''} · ${tokens(totalTokens(o.usage))} tokens · ${Math.round(o.cacheHitRate * 100)}% cache hits · ${o.prompts} prompts · ${o.toolCalls} tool calls (${o.toolCalls ? ((o.toolErrors / o.toolCalls) * 100).toFixed(1) : 0}% failed)`,
   );
   out.push(
     c.dim(

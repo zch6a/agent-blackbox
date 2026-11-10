@@ -1,6 +1,6 @@
 import { basename } from 'node:path';
 import { localDate } from './format.ts';
-import { AGENT_LABELS, addUsage, emptyUsage, totalTokens, type SessionSummary, type Usage } from './types.ts';
+import { AGENT_LABELS, addUsage, emptyUsage, ownCost, totalTokens, type SessionSummary, type Usage } from './types.ts';
 
 export const GROUPS = ['day', 'week', 'month', 'agent', 'model', 'project', 'tool'] as const;
 export type GroupBy = (typeof GROUPS)[number];
@@ -44,8 +44,9 @@ function weekKey(ms: number): string {
 }
 
 function add(r: StatRow, s: SessionSummary, share = 1): void {
-  r.sessions += 1;
-  r.usd += s.cost.usd * share;
+  // Sub-agents add their tokens, tools and (unless already inside the parent) cost — but are not extra sessions.
+  if (!s.parentKey) r.sessions += 1;
+  r.usd += ownCost(s) * share;
   r.tokens += totalTokens(s.usage) * share;
   r.prompts += s.prompts;
   r.toolCalls += s.toolCalls;
@@ -75,6 +76,20 @@ export function fillDays(rows: StatRow[], maxDays = 800): StatRow[] {
 
 export function aggregate(sessions: SessionSummary[], by: GroupBy, opts: { fillGaps?: boolean } = {}): StatRow[] {
   const rows = new Map<string, StatRow>();
+  // A recorded cost covers a whole family (parent + sub-agents whose cost is inside it).
+  // Spread it over every member's models in proportion to their estimated cost.
+  const estOf = (s: SessionSummary) => Object.values(s.modelUsage).reduce((a, m) => a + m.usd, 0);
+  const family = new Map<string, number>();
+  const byKey = new Map(sessions.map((s) => [s.key, s]));
+  for (const s of sessions) {
+    if (s.costInParent && s.parentKey) family.set(s.parentKey, (family.get(s.parentKey) ?? 0) + estOf(s));
+  }
+  const scale = (s: SessionSummary): number => {
+    const owner = s.costInParent && s.parentKey ? byKey.get(s.parentKey) : s;
+    if (!owner) return s.costInParent ? 0 : 1;
+    const est = estOf(owner) + (family.get(owner.key) ?? 0);
+    return est > 0 ? owner.cost.usd / est : s.costInParent ? 0 : 1;
+  };
   const get = (k: string) => {
     let r = rows.get(k);
     if (!r) rows.set(k, (r = row(k)));
@@ -103,12 +118,11 @@ export function aggregate(sessions: SessionSummary[], by: GroupBy, opts: { fillG
           add(get('(no usage data)'), s);
           break;
         }
-        const est = entries.reduce((a, [, m]) => a + m.usd, 0);
+        const k = scale(s);
         for (const [model, m] of entries) {
           const r = get(model);
           r.sessions += 1;
-          // Spread a recorded session cost across models in proportion to their estimated share.
-          r.usd += s.cost.source === 'recorded' && est > 0 ? (s.cost.usd * m.usd) / est : m.usd;
+          r.usd += m.usd * k;
           r.tokens += m.tokens;
         }
         break;
@@ -130,7 +144,10 @@ export function aggregate(sessions: SessionSummary[], by: GroupBy, opts: { fillG
 }
 
 export interface Overview {
+  /** Top-level sessions (what a human started). */
   sessions: number;
+  /** Sub-agent sessions spawned by them. */
+  subagents: number;
   usd: number;
   usage: Usage;
   prompts: number;
@@ -163,8 +180,8 @@ export function overview(sessions: SessionSummary[]): Overview {
   let top: SessionSummary | null = null;
   for (const s of sessions) {
     addUsage(usage, s.usage);
-    usd += s.cost.usd;
-    if (s.cost.source === 'recorded') recordedUsd += s.cost.usd;
+    usd += ownCost(s);
+    if (s.cost.source === 'recorded') recordedUsd += ownCost(s);
     prompts += s.prompts;
     toolCalls += s.toolCalls;
     toolErrors += s.toolErrors;
@@ -173,11 +190,13 @@ export function overview(sessions: SessionSummary[]): Overview {
     filesChanged += s.filesChanged;
     durationMs += activeDuration(s);
     if (s.flags.includes('log-uploaded')) uploaded++;
-    if (!top || s.cost.usd > top.cost.usd) top = s;
+    if (!top || ownCost(s) > ownCost(top)) top = s;
   }
   const promptTokens = usage.input + usage.cacheRead + usage.cacheWrite;
+  const subagents = sessions.filter((s) => s.parentKey).length;
   return {
-    sessions: sessions.length,
+    sessions: sessions.length - subagents,
+    subagents,
     usd,
     usage,
     prompts,

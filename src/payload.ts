@@ -24,7 +24,7 @@ function clipInput(input: unknown, max: number): [unknown, boolean] {
  * and messages are clipped (the UI can fetch a single event in full).
  */
 export function toPayload(session: Session, maxText = 6000): UiSession {
-  const events = session.events.map((ev, i): UiEvent => {
+  const events = session.events.map((ev): UiEvent => {
     switch (ev.kind) {
       case 'tool': {
         const [output, oc] = clipText(ev.output, maxText);
@@ -43,7 +43,6 @@ export function toPayload(session: Session, maxText = 6000): UiSession {
         return clipped ? { ...ev, text, clipped } : ev;
       }
       default:
-        void i;
         return ev;
     }
   });

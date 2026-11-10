@@ -1,4 +1,5 @@
-import { basename, join } from 'node:path';
+import { readFile } from 'node:fs/promises';
+import { basename, dirname, join, relative } from 'node:path';
 import { SessionBuilder, countImages, textOf } from '../builder.ts';
 import { fromReplace, fromStructuredPatch, fromWrite } from '../edits.ts';
 import { costOf } from '../pricing.ts';
@@ -33,8 +34,11 @@ export const claudeAdapter: Adapter = {
   async discover(roots) {
     const refs: SessionRef[] = [];
     for (const root of roots) {
-      const files = await walk(root, (n) => n.endsWith('.jsonl'), 1);
+      // <slug>/<session>.jsonl, plus sub-agents at <slug>/<session>/subagents/agent-<id>.jsonl
+      const files = await walk(root, (n) => n.endsWith('.jsonl'), 3);
       for (const path of files) {
+        const depth = relative(root, path).split(/[\\/]/).length;
+        if (depth !== 2 && !SUBAGENT_FILE.test(path)) continue;
         const s = await statSafe(path);
         if (!s || s.size === 0) continue;
         const id = basename(path, '.jsonl');
@@ -45,9 +49,34 @@ export const claudeAdapter: Adapter = {
   },
 
   async load(ref) {
-    return parseClaude(ref, readJsonl(ref.path, SKIP_PREFIXES));
+    const sub = SUBAGENT_FILE.test(ref.path) ? await subagentInfo(ref.path) : undefined;
+    return parseClaude(ref, readJsonl(ref.path, SKIP_PREFIXES), sub);
   },
 };
+
+const SUBAGENT_FILE = /[\\/]subagents[\\/]agent-[^\\/]+\.jsonl$/;
+
+export interface SubagentInfo {
+  parentId: string;
+  toolUseId?: string;
+  agentType?: string;
+  description?: string;
+}
+
+/** Sub-agent logs sit next to `agent-<id>.meta.json` ({ agentType, description, toolUseId }). */
+async function subagentInfo(path: string): Promise<SubagentInfo> {
+  const parentId = basename(dirname(dirname(path)));
+  try {
+    const meta = obj(JSON.parse(await readFile(path.replace(/\.jsonl$/, '.meta.json'), 'utf8')));
+    const info: SubagentInfo = { parentId };
+    if (str(meta.toolUseId)) info.toolUseId = str(meta.toolUseId);
+    if (str(meta.agentType)) info.agentType = str(meta.agentType);
+    if (str(meta.description)) info.description = str(meta.description);
+    return info;
+  } catch {
+    return { parentId };
+  }
+}
 
 /**
  * Bookkeeping lines that never affect the timeline. `api-request-blob` alone is
@@ -134,8 +163,13 @@ export function combineProcessCosts(segments: { first: number; last: number }[])
 
 type Lines = AsyncIterable<Record<string, unknown>> | Iterable<Record<string, unknown>>;
 
-export async function parseClaude(ref: SessionRef, lines: Lines): Promise<Session> {
+export async function parseClaude(ref: SessionRef, lines: Lines, sub?: SubagentInfo): Promise<Session> {
   const b = new SessionBuilder(ref);
+  if (sub) {
+    b.parentKey = makeKey('claude-code', sub.parentId);
+    b.parentToolId = sub.toolUseId;
+    b.agentName = sub.agentType;
+  }
   const usageById = new Map<string, UsageEvent>();
   const costByProcess = new Map<number, { first: number; last: number }>();
   let customTitle = '';
@@ -198,13 +232,19 @@ export async function parseClaude(ref: SessionRef, lines: Lines): Promise<Sessio
 
     if (type === 'user') {
       const content = msg.content;
-      // isMeta lines and sidechain (old-style sub-agent) prompts are never typed by the human.
-      const hidden = line.isMeta === true || sidechain;
+      // In a sub-agent's own log, its "user" messages are the task the parent agent delegated.
+      const delegated = !!sub && sidechain && line.isMeta !== true;
+      // isMeta lines and sidechain prompts inside a parent log are never typed by the human.
+      const hidden = line.isMeta === true || (sidechain && !delegated);
       // Newer versions tag where a prompt came from; anything but a human is automation.
       const originKind = str(obj(line.origin).kind);
       const automatedBy = originKind && originKind !== 'human' ? originKind : '';
       if (typeof content === 'string') {
-        if (!hidden) userText(t, content, 0, automatedBy);
+        if (delegated) {
+          const c = classifyUserText(content);
+          if (c.kind === 'human') b.user(t, c.text, 0, 'agent');
+          else userText(t, content, 0, '');
+        } else if (!hidden) userText(t, content, 0, automatedBy);
         continue;
       }
       const texts: string[] = [];
@@ -230,7 +270,7 @@ export async function parseClaude(ref: SessionRef, lines: Lines): Promise<Sessio
           if (c.kind === 'human' && !automatedBy) human.push(c.text);
           else userText(t, text, 0, automatedBy);
         }
-        if (human.length || images) b.user(t, human.join('\n'), images);
+        if (human.length || images) b.user(t, human.join('\n'), images, delegated ? 'agent' : undefined);
       }
       continue;
     }
@@ -285,8 +325,13 @@ export async function parseClaude(ref: SessionRef, lines: Lines): Promise<Sessio
     }
   }
 
-  b.title = customTitle || summaryTitle;
-  if (costByProcess.size) b.recordedCostUsd = combineProcessCosts([...costByProcess.values()]);
+  b.title = customTitle || summaryTitle || sub?.description || '';
+  if (costByProcess.size) {
+    b.recordedCostUsd = combineProcessCosts([...costByProcess.values()]);
+    // cost-state only covers processes that wrote it; earlier requests get estimated.
+    const starts = [...costByProcess.keys()].filter((t) => t > 0);
+    if (starts.length) b.recordedSince = toMs(Math.min(...starts));
+  }
   if (lastTool && !lastTool.answered) b.flags.add('incomplete');
   return b.build();
 }

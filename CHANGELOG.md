@@ -2,6 +2,21 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [0.2.0] — 2026-11-10
+
+### Added
+
+- Sub-agent sessions for all four agents, linked to their parent and to the tool call that spawned them (Claude Code `subagents/` logs were previously ignored). `list --subagents`, a Sub-agents tab and filter chip in the UI, and family totals on parent rows.
+- `mixed` cost source for sessions whose recorded cost only covers part of the session.
+- `show` uses a pager for long output (`$PAGER`, `--no-pager`).
+
+### Fixed
+
+- Sessions where Claude Code's `cost-state` started late (agent upgrade, or reopening an old session) were under-reported, sometimes by over $1,000. The uncovered part is now estimated.
+- `last` / `-2` pick the latest top-level session, not a sub-agent.
+- The summary cache now invalidates itself whenever the parser code changes.
+- Colour contrast now meets WCAG AA in both themes; focus rings and ARIA roles fixed.
+
 ## [0.1.1] — 2026-11-10
 
 ### Changed

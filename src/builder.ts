@@ -8,7 +8,9 @@ import {
   type SessionEvent,
   type SessionFlag,
   type SessionRef,
+  type SessionSummary,
   type ToolEvent,
+  type UserEvent,
   type Usage,
   totalTokens,
 } from './types.ts';
@@ -79,6 +81,11 @@ export class SessionBuilder {
   endedAt = 0;
   /** Set when the agent itself recorded the session cost. */
   recordedCostUsd: number | undefined;
+  /** When the agent's own cost accounting started covering this session (epoch ms). */
+  recordedSince: number | undefined;
+  parentKey: string | undefined;
+  parentToolId: string | undefined;
+  agentName: string | undefined;
 
   constructor(ref: SessionRef) {
     this.ref = ref;
@@ -90,10 +97,14 @@ export class SessionBuilder {
     if (t > this.endedAt) this.endedAt = t;
   }
 
-  user(t: number, text: string, images = 0): void {
+  /** `from: 'agent'` marks a task delegated by a parent agent: shown like a prompt, never counted as one. */
+  user(t: number, text: string, images = 0, from?: 'agent'): void {
     if (!text.trim() && !images) return;
     this.touch(t);
-    this.events.push(images ? { kind: 'user', t, text, images } : { kind: 'user', t, text });
+    const ev: UserEvent = { kind: 'user', t, text };
+    if (images) ev.images = images;
+    if (from) ev.from = from;
+    this.events.push(ev);
   }
 
   assistant(t: number, text: string, model?: string): void {
@@ -158,6 +169,29 @@ export class SessionBuilder {
     this.events.push({ kind: 'compact', t, text });
   }
 
+  /**
+   * An agent's own cost accounting may start in the middle of a session (an
+   * upgrade added it, or an old session was merely reopened). Requests before
+   * `recordedSince` are not in the recorded total, so they are estimated.
+   */
+  private combineRecorded(recorded: number, unpriced: boolean): Cost {
+    const since = this.recordedSince;
+    if (since === undefined) return { usd: recorded, source: 'recorded' };
+    let before = 0;
+    let beforeCount = 0;
+    let afterCount = 0;
+    for (const ev of this.events) {
+      if (ev.kind !== 'usage') continue;
+      if (ev.t && ev.t < since) {
+        before += ev.usd;
+        beforeCount++;
+      } else afterCount++;
+    }
+    if (!beforeCount) return { usd: recorded, source: 'recorded', recordedSince: since };
+    if (!afterCount) return { usd: before + recorded, source: unpriced ? 'partial' : 'estimated', recordedSince: since };
+    return { usd: before + recorded, source: 'mixed', recordedSince: since };
+  }
+
   build(): Session {
     const usage = emptyUsage();
     let usd = 0;
@@ -176,7 +210,7 @@ export class SessionBuilder {
     for (const ev of this.events) {
       switch (ev.kind) {
         case 'user':
-          prompts++;
+          if (!ev.from) prompts++;
           if (!firstPrompt) firstPrompt = ev.text;
           break;
         case 'tool':
@@ -204,14 +238,20 @@ export class SessionBuilder {
     }
 
     let cost: Cost;
-    if (this.recordedCostUsd !== undefined) cost = { usd: this.recordedCostUsd, source: 'recorded' };
+    if (this.recordedCostUsd !== undefined) cost = this.combineRecorded(this.recordedCostUsd, unpriced);
     else if (!anyUsage) cost = { usd: 0, source: 'unknown' };
     else cost = { usd, source: unpriced ? 'partial' : 'estimated' };
 
     const title = oneLine(this.title) || truncate(oneLine(firstPrompt), 120) || '(untitled session)';
     const activeMs = activeTime(this.events);
     const ref = this.ref;
+    const links: Pick<SessionSummary, 'parentKey' | 'parentToolId' | 'agentName'> = {};
+    if (this.parentKey) links.parentKey = this.parentKey;
+    if (this.parentToolId) links.parentToolId = this.parentToolId;
+    if (this.agentName) links.agentName = this.agentName;
+    if (this.parentKey) this.flags.add('subagent');
     return {
+      ...links,
       key: ref.key,
       agent: ref.agent,
       id: ref.id,

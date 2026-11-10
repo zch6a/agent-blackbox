@@ -20,6 +20,7 @@ export interface Fixture {
 }
 
 export const CLAUDE_ID = '11111111-aaaa-4bbb-8ccc-000000000001';
+export const CLAUDE_SUBAGENT_ID = 'agent-a1b2c3d4e5f60789';
 export const CODEX_ID = '22222222-aaaa-4bbb-8ccc-000000000002';
 export const OPENCODE_ID = 'ses_test0003';
 export const DSH_ID = '44444444-aaaa-4bbb-8ccc-000000000004';
@@ -57,6 +58,18 @@ export function claudeLines(): unknown[] {
     { ...base, type: 'assistant', timestamp: iso(40), message: { id: 'msg_4', model: 'claude-sonnet-5-5', role: 'assistant', content: [{ type: 'text', text: 'Fixed. Totals are now rounded to cents.' }], usage } },
     { type: 'cost-state', sessionId: CLAUDE_ID, startTime: T0, totalCostUSD: 0.0421, modelUsage: {} },
     { type: 'file-history-snapshot', messageId: 'x', snapshot: {} },
+  ];
+}
+
+/** A sub-agent's own log: every line is a sidechain; the "user" message is the delegated task. */
+export function claudeSubagentLines(): unknown[] {
+  const base = { sessionId: CLAUDE_ID, agentId: 'a1b2c3d4e5f60789', isSidechain: true, cwd: '/work/shop', version: '2.9.0' };
+  const usage = { input_tokens: 40, output_tokens: 30, cache_read_input_tokens: 500, cache_creation_input_tokens: 0 };
+  return [
+    { ...base, type: 'user', timestamp: iso(3), message: { role: 'user', content: 'Find every helper that rounds money in /work/shop.' } },
+    { ...base, type: 'assistant', timestamp: iso(4), message: { id: 'sub_1', model: 'claude-haiku-5-5', role: 'assistant', content: [{ type: 'tool_use', id: 'tu_sub_grep', name: 'Grep', input: { pattern: 'round', path: '/work/shop' } }], usage } },
+    { ...base, type: 'user', timestamp: iso(5), message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: 'tu_sub_grep', content: 'cart.ts:1' }] } },
+    { ...base, type: 'assistant', timestamp: iso(6), message: { id: 'sub_2', model: 'claude-haiku-5-5', role: 'assistant', content: [{ type: 'text', text: 'Only cart.ts rounds money.' }], usage } },
   ];
 }
 
@@ -189,6 +202,10 @@ export function makeFixture(): Fixture {
   const deepseek = join(dir, 'dsh', 'sessions');
   mkdirSync(join(claude, '-work-shop'), { recursive: true });
   writeFileSync(join(claude, '-work-shop', `${CLAUDE_ID}.jsonl`), jsonl(claudeLines()));
+  const subDir = join(claude, '-work-shop', CLAUDE_ID, 'subagents');
+  mkdirSync(subDir, { recursive: true });
+  writeFileSync(join(subDir, `${CLAUDE_SUBAGENT_ID}.jsonl`), jsonl(claudeSubagentLines()));
+  writeFileSync(join(subDir, `${CLAUDE_SUBAGENT_ID}.meta.json`), JSON.stringify({ agentType: 'Explore', description: 'Find rounding helpers', toolUseId: 'tu_task', spawnDepth: 1 }));
   mkdirSync(join(codex, '2026', '11', '01'), { recursive: true });
   writeFileSync(join(codex, '2026', '11', '01', `rollout-2026-11-01T10-00-00-${CODEX_ID}.jsonl`), jsonl(codexLines()));
   mkdirSync(opencode, { recursive: true });

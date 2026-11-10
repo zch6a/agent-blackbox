@@ -8,10 +8,6 @@ function capDiff(lines: string[]): string {
   return [...lines.slice(0, MAX_DIFF_LINES), `… ${lines.length - MAX_DIFF_LINES} more lines`].join('\n');
 }
 
-function countLines(text: string): number {
-  if (!text) return 0;
-  return text.split('\n').length - (text.endsWith('\n') ? 1 : 0);
-}
 
 /** Claude Code `structuredPatch`: [{ oldStart, newStart, lines: ['+a', '-b', ' c'] }]. */
 export function fromStructuredPatch(path: string, patch: unknown, op: FileEdit['op'] = 'modify'): FileEdit {
@@ -191,5 +187,3 @@ export function guessEdits(toolName: string, input: unknown): FileEdit[] {
   if (typeof content === 'string' && WRITE_TOOLS.test(name)) return [fromWrite(path, content, 'create')];
   return [];
 }
-
-export { countLines };

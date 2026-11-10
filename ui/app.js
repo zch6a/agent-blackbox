@@ -40,7 +40,7 @@
   const S = {
     sessions: [],
     loaded: false,
-    filter: { agents: new Set(store.get('agents', [])), q: '', range: store.get('range', 'all'), sort: store.get('sort', 'time') },
+    filter: { agents: new Set(store.get('agents', [])), q: '', range: store.get('range', 'all'), sort: store.get('sort', 'time'), subagents: store.get('subagents', false) },
     listLimit: 150,
     key: null,
     data: null,
@@ -282,18 +282,31 @@
     const since = rangeStart(f.range);
     let list = S.sessions.filter(
       (s) =>
+        (f.subagents || !s.parentKey) &&
         (!f.agents.size || f.agents.has(s.agent)) &&
         (!since || s.endedAt >= since) &&
         (!q || s.title.toLowerCase().includes(q) || String(s.cwd).toLowerCase().includes(q) || s.id.toLowerCase().startsWith(q) || s.models.join(' ').toLowerCase().includes(q)),
     );
     const sorters = {
       time: (a, b) => b.endedAt - a.endedAt,
-      cost: (a, b) => b.cost.usd - a.cost.usd,
+      cost: (a, b) => ownCost(b) - ownCost(a),
       tools: (a, b) => b.toolCalls - a.toolCalls,
       errors: (a, b) => b.toolErrors - a.toolErrors,
     };
     return list.sort(sorters[f.sort] || sorters.time);
   }
+  /** Sub-agents whose cost is inside their parent's recorded total add nothing to sums. */
+  const ownCost = (s) => (s.costInParent ? 0 : s.cost.usd);
+  const childrenOf = (key) => S.sessions.filter((x) => x.parentKey === key).sort((a, b) => a.startedAt - b.startedAt);
+  /** What a piece of work cost: the session plus sub-agents that are not already inside its recorded total. */
+  const familyCost = (s) => ownCost(s) + (s.children ? childrenOf(s.key).reduce((a, c) => a + ownCost(c), 0) : 0);
+  const familyLabel = (s) => {
+    const extra = familyCost(s) - ownCost(s);
+    if (!extra) return costLabel(s.cost);
+    const exact = s.cost.source === 'recorded' && childrenOf(s.key).every((c) => c.costInParent || c.cost.source === 'recorded');
+    return (exact ? '' : '~') + money(familyCost(s));
+  };
+  const summaryOf = (key) => S.sessions.find((x) => x.key === key);
 
   function renderShell() {
     if ($('.split')) return;
@@ -301,7 +314,7 @@
       <div class="split">
         <aside class="sidebar">
           <div class="filters">
-            <input class="search" id="q" placeholder="Search titles, projects, ids, models…  ( / )" autocomplete="off" spellcheck="false" />
+            <input class="search" id="q" type="search" aria-label="Search sessions" placeholder="Search titles, projects, ids, models…  ( / )" autocomplete="off" spellcheck="false" />
             <div class="chips" id="agents"></div>
             <div class="row-inline">
               <select class="mini" id="range" aria-label="Time range">
@@ -314,7 +327,7 @@
               <button class="icon-btn live-only" id="refresh" title="Rescan logs" aria-label="Rescan logs">↻</button>
             </div>
           </div>
-          <div class="session-list" id="list" role="listbox" aria-label="Sessions"></div>
+          <nav class="session-list" id="list" aria-label="Sessions"></nav>
         </aside>
         <section class="detail" id="detail"></section>
       </div>`;
@@ -341,6 +354,12 @@
     $('#agents').addEventListener('click', (e) => {
       const chip = e.target.closest('.chip');
       if (!chip) return;
+      if (chip.dataset.subagents !== undefined) {
+        S.filter.subagents = !S.filter.subagents;
+        store.set('subagents', S.filter.subagents);
+        renderList();
+        return;
+      }
       const a = chip.dataset.agent;
       if (S.filter.agents.has(a)) S.filter.agents.delete(a);
       else S.filter.agents.add(a);
@@ -360,11 +379,19 @@
     const el = $('#list');
     if (!el) return;
     const counts = {};
-    for (const s of S.sessions) counts[s.agent] = (counts[s.agent] || 0) + 1;
-    $('#agents').innerHTML = Object.keys(AGENTS)
-      .filter((a) => counts[a])
-      .map((a) => `<span class="chip ${S.filter.agents.has(a) ? 'on' : ''}" data-agent="${a}"><span class="dot ${a}"></span>${AGENTS[a]} <span class="n">${counts[a]}</span></span>`)
-      .join('');
+    let subs = 0;
+    for (const s of S.sessions) {
+      if (s.parentKey) subs++;
+      else counts[s.agent] = (counts[s.agent] || 0) + 1;
+    }
+    $('#agents').innerHTML =
+      Object.keys(AGENTS)
+        .filter((a) => counts[a])
+        .map((a) => `<button type="button" class="chip ${S.filter.agents.has(a) ? 'on' : ''}" data-agent="${a}" aria-pressed="${S.filter.agents.has(a)}"><span class="dot ${a}"></span>${AGENTS[a]} <span class="n">${counts[a]}</span></button>`)
+        .join('') +
+      (subs
+        ? `<button type="button" class="chip ${S.filter.subagents ? 'on' : ''}" data-subagents aria-pressed="${!!S.filter.subagents}" data-tip="Sessions spawned by another agent. Their parents show ⑂ with a count.">↳ Sub-agents <span class="n">${subs}</span></button>`
+        : '');
     if (!S.loaded) {
       el.innerHTML = '<div class="empty">Indexing sessions…</div>';
       return;
@@ -374,7 +401,8 @@
       return;
     }
     const list = filtered();
-    const total = list.reduce((a, s) => a + s.cost.usd, 0);
+    // With sub-agents hidden, each parent row carries its family's cost.
+    const total = list.reduce((a, s) => a + (S.filter.subagents ? ownCost(s) : familyCost(s)), 0);
     $('#list-meta').textContent = `${num(list.length)} · ${money(total)}`;
     el.innerHTML =
       list
@@ -383,12 +411,13 @@
           const flags = [
             s.toolErrors ? `<span class="flag err" data-tip="${s.toolErrors} failed tool calls">✗ ${s.toolErrors}</span>` : '',
             s.flags.includes('log-uploaded') ? `<span class="flag up" data-tip="Session log uploaded to the DeepSeek API">↑ uploaded</span>` : '',
-            s.flags.includes('subagent') ? `<span class="flag sub" data-tip="Sub-agent session">↳ sub</span>` : '',
+            s.children ? `<span class="flag kids" data-tip="Spawned ${s.children} sub-agent${s.children > 1 ? 's' : ''}">⑂ ${s.children}</span>` : '',
+            s.parentKey ? `<span class="flag sub" data-tip="Sub-agent${s.agentName ? ' (' + esc(s.agentName) + ')' : ''}">↳ ${esc(s.agentName || 'sub')}</span>` : '',
             s.flags.includes('incomplete') ? `<span class="flag inc" data-tip="Log ends mid-turn: still running, interrupted or crashed">… live</span>` : '',
           ].join('');
-          return `<a class="s-item ${s.key === S.key ? 'on' : ''}" href="#/s/${encodeURIComponent(s.key)}" data-key="${esc(s.key)}" role="option">
+          return `<a class="s-item ${s.key === S.key ? 'on' : ''}" href="#/s/${encodeURIComponent(s.key)}" data-key="${esc(s.key)}"${s.key === S.key ? ' aria-current="page"' : ''}>
             <div class="s-title">${esc(s.title)}</div>
-            <div class="s-meta"><span class="dot ${s.agent}" data-tip="${AGENTS[s.agent]}"></span><span>${esc(project(s.cwd))}</span><span>·</span><span>${when(s.endedAt)}</span><span class="s-flags">${flags}</span><span class="cost">${costLabel(s.cost)}</span></div>
+            <div class="s-meta"><span class="dot ${s.agent}" data-tip="${AGENTS[s.agent]}"></span><span>${esc(project(s.cwd))}</span><span>·</span><span>${when(s.endedAt)}</span><span class="s-flags">${flags}</span><span class="cost">${s.costInParent ? '<span class="hint" data-tip="Included in the parent session’s recorded cost">in parent</span>' : s.children && !S.filter.subagents ? `<span data-tip="Including ${s.children} sub-agent${s.children > 1 ? 's' : ''}">${familyLabel(s)}</span>` : costLabel(s.cost)}</span></div>
           </a>`;
         })
         .join('') + (list.length > S.listLimit ? `<button class="more">Show ${Math.min(300, list.length - S.listLimit)} more of ${num(list.length - S.listLimit)}</button>` : '');
@@ -433,10 +462,11 @@
       d.innerHTML = '<div class="empty">Reading your agent logs…</div>';
       return;
     }
-    const total = S.sessions.reduce((a, s) => a + s.cost.usd, 0);
+    const total = S.sessions.reduce((a, s) => a + ownCost(s), 0);
     const tools = S.sessions.reduce((a, s) => a + s.toolCalls, 0);
+    const top = S.sessions.filter((s) => !s.parentKey).length;
     d.innerHTML = `<div class="empty">
-      <h2>${num(S.sessions.length)} sessions · ${money(total)} · ${num(tools)} tool calls</h2>
+      <h2>${num(top)} sessions · ${money(total)} · ${num(tools)} tool calls</h2>
       Pick a session to replay it, or open <a href="#/insights">Insights</a> to see where the money and time went.
       <p class="hint" style="margin-top:18px"><kbd>/</kbd> search &nbsp; <kbd>j</kbd> <kbd>k</kbd> next / previous &nbsp; <kbd>space</kbd> replay &nbsp; <kbd>e</kbd> errors only &nbsp; <kbd>t</kbd> theme</p>
     </div>`;
@@ -446,7 +476,12 @@
   async function openSession(key, preloaded) {
     stopReplay();
     S.key = key || (preloaded && preloaded.key);
-    $$('.s-item').forEach((x) => x.classList.toggle('on', x.dataset.key === S.key));
+    $$('.s-item').forEach((x) => {
+      const on = x.dataset.key === S.key;
+      x.classList.toggle('on', on);
+      if (on) x.setAttribute('aria-current', 'page');
+      else x.removeAttribute('aria-current');
+    });
     const split = $('.split');
     if (split) split.classList.add('has-session');
     if (!LIVE) {
@@ -464,7 +499,15 @@
       }
       if (S.key !== key) return; // user moved on
     }
+    // Family links are computed across sessions, so they come from the list, not the session payload.
+    const sum = LIVE ? summaryOf(S.key) : null;
+    if (sum) {
+      preloaded.children = sum.children;
+      preloaded.costInParent = sum.costInParent;
+    }
     S.data = prepare(preloaded);
+    S.data._kids = LIVE ? childrenOf(S.key) : [];
+    S.data._kidByTool = new Map(S.data._kids.filter((k) => k.parentToolId).map((k) => [k.parentToolId, k]));
     document.title = S.data.title + ' · agent-blackbox';
     renderDetail();
   }
@@ -485,8 +528,8 @@
       if (ev[i].kind === 'usage') c += ev[i].usd || 0;
       cum[i] = c;
     }
-    // When the agent recorded its own total, scale the running estimate to match it.
-    const scale = s.cost.source === 'recorded' && c > 0 ? s.cost.usd / c : 1;
+    // When the agent recorded (part of) its own total, scale the running estimate so the curve ends at it.
+    const scale = (s.cost.source === 'recorded' || s.cost.source === 'mixed') && c > 0 ? s.cost.usd / c : 1;
     for (let i = 0; i < cum.length; i++) cum[i] *= scale;
     s._pos = pos;
     s._cum = cum;
@@ -529,10 +572,21 @@
     if (s.flags.includes('log-uploaded'))
       notices.push(`<div class="notice danger">↑ <span><b>This session's log was uploaded to the DeepSeek API.</b> DeepSeek Harness enables session-log delivery by default on the official API; you can turn it off in its Settings.</span></div>`);
     if (s.flags.includes('incomplete')) notices.push(`<div class="notice warn">… <span>The log ends mid-turn — the agent is still running, was interrupted, or crashed.</span></div>`);
+    if (s.parentKey) {
+      const parent = LIVE ? summaryOf(s.parentKey) : null;
+      const link = parent ? `<a href="#/s/${encodeURIComponent(parent.key)}">${esc(parent.title)}</a>` : `<span class="mono">${esc(s.parentKey.slice(s.parentKey.indexOf(':') + 1))}</span>`;
+      notices.push(
+        `<div class="notice info">↳ <span>Sub-agent${s.agentName ? ` <b>${esc(s.agentName)}</b>` : ''} spawned by ${link}.${s.costInParent ? ' Its cost is already included in the parent’s recorded cost.' : ''}</span></div>`,
+      );
+    }
+    const kids = s._kids || [];
+    const famUsd = kids.length ? familyCost(s) : 0;
     const costTip =
       s.cost.source === 'recorded'
         ? 'Cost recorded by the agent itself'
-        : s.cost.source === 'partial'
+        : s.cost.source === 'mixed'
+          ? `Recorded by the agent from ${day(s.cost.recordedSince)} ${clock(s.cost.recordedSince)}; earlier requests estimated from list prices`
+          : s.cost.source === 'partial'
           ? 'Estimated from list prices; some models have no known price'
           : s.cost.source === 'estimated'
             ? `Estimated from token counts and list prices (${BOOT.pricesUpdated || ''})`
@@ -544,7 +598,13 @@
       <div class="subtitle"><span class="mono">${esc(home(s.cwd) || '—')}</span><span>${day(s.startedAt)} ${clock(s.startedAt)} → ${s.endedAt - s.startedAt > 864e5 ? day(s.endedAt) + ' ' : ''}${clock(s.endedAt)}</span><span>${esc(s.models.join(', ') || 'unknown model')}</span></div>
       ${notices.join('')}
       <div class="kpis">
-        ${kpi('Cost', costLabel(s.cost), s.cost.source, costTip)}
+        ${
+          s.costInParent
+            ? kpi('Cost', '<span class="hint">in parent</span>', `~${money(s.cost.usd)} est.`, 'Included in the parent session’s recorded cost')
+            : famUsd > ownCost(s) + 0.005
+              ? kpi('Cost', familyLabel(s), `${costLabel(s.cost)} here + ${kids.length} sub-agent${kids.length > 1 ? 's' : ''}`, costTip + ' — plus sub-agents not included in it')
+              : kpi('Cost', costLabel(s.cost), s.cost.source + (kids.length ? ` · +${kids.length} sub-agent${kids.length > 1 ? 's' : ''}` : ''), costTip + (kids.length ? ', including its sub-agents' : ''))
+        }
         ${kpi('Tokens', tok(totalTokens(u)), promptTok ? cachePct + '% cache hits' : '', `input ${num(u.input)} · output ${num(u.output)} · cache read ${num(u.cacheRead)} · cache write ${num(u.cacheWrite)}`)}
         ${kpi('Active time', dur(activeMs(s)), 'over ' + dur(wall), 'Idle gaps longer than 5 minutes are not counted')}
         ${kpi('Prompts', num(s.prompts), s.prompts ? money(s.cost.usd / s.prompts) + ' / prompt' : '')}
@@ -560,13 +620,14 @@
           <span class="legend"><i style="background:var(--accent);height:2px"></i>cumulative cost</span>
           <span class="spacer"></span><span>idle gaps compressed · click to jump</span>
         </div>
-        <canvas id="flight" aria-label="Session activity over time"></canvas>
+        <canvas id="flight" role="img" aria-label="Session activity over time: ${num(s.prompts)} prompts, ${num(s.toolCalls)} tool calls, ${num(s.toolErrors)} failed. Click to jump to a moment."></canvas>
         <div class="flight-axis"><span>${clock(s.startedAt)}</span><span id="flight-mid"></span><span>${clock(s.endedAt)}</span></div>
       </div>
       <div class="toolbar" id="toolbar">
         <div class="seg" id="tabs">
           <button data-tab="timeline">Timeline</button>
           <button data-tab="files">Files ${s._files.length}</button>
+          ${kids.length ? `<button data-tab="agents">Sub-agents ${kids.length}</button>` : ''}
           <button data-tab="tools">Tools ${s._tools.length}</button>
         </div>
         <span class="tl-only seg" id="mode">
@@ -576,9 +637,10 @@
         </span>
         <label class="toggle tl-only"><input type="checkbox" id="opt-thinking" /> Thinking</label>
         <label class="toggle tl-only"><input type="checkbox" id="opt-costs" /> Costs</label>
-        <span class="spacer"></span>
-        <input class="find tl-only" id="find" placeholder="Find in session…" autocomplete="off" spellcheck="false" />
-        <button class="btn primary tl-only" id="play" data-tip="Replay the session step by step (space)">▶ Replay</button>
+        <span class="tb-right tl-only">
+          <input class="find" id="find" type="search" aria-label="Find in this session (Enter for next match)" placeholder="Find in session…" autocomplete="off" spellcheck="false" />
+          <button class="btn primary" id="play" data-tip="Replay the session step by step (space)">▶ Replay</button>
+        </span>
         <div class="replay" id="replay">
           <button class="btn" id="rp-toggle">❚❚</button>
           <span class="seg" id="rp-speed"><button data-speed="1">1×</button><button data-speed="4">4×</button><button data-speed="16">16×</button><button data-speed="64">64×</button></span>
@@ -666,6 +728,11 @@
     const body = $('#tabbody');
     if (S.opts.tab === 'files') return renderFiles(body);
     if (S.opts.tab === 'tools') return renderTools(body);
+    if (S.opts.tab === 'agents') {
+      if (S.data._kids.length) return renderAgents(body);
+      S.opts.tab = 'timeline';
+      S._syncToolbar && S._syncToolbar();
+    }
     body.innerHTML = `<div class="timeline ${S.opts.costs ? 'show-costs' : ''}" id="timeline"></div>`;
     renderTimeline();
   }
@@ -751,6 +818,7 @@
     switch (e.kind) {
       case 'user': {
         const imgs = e.images ? ` <span class="model">· ${e.images} image${e.images > 1 ? 's' : ''}</span>` : '';
+        if (e.from === 'agent') return `<div class="ev user task${cls}" ${attrs}>${t}<div class="card"><div class="who">Task from the parent agent${imgs}</div>${textBlock(e.text)}</div></div>`;
         return `<div class="ev user${cls}" ${attrs}>${t}<div class="card"><div class="who">You${imgs}</div>${textBlock(e.text)}</div></div>`;
       }
       case 'assistant':
@@ -765,7 +833,9 @@
             ? '<span class="st">✓</span>'
             : '<span class="st pending" data-tip="No result recorded">…</span>';
         const took = e.endT && e.endT > e.t ? `<span class="dur">${dur(e.endT - e.t)}</span>` : '';
-        return `<div class="ev toolev${cls}" ${attrs}>${t}<details class="tool${e.isError ? ' err' : ''}${e.parentId ? ' nested' : ''}"><summary>${toolName(e.name)}<span class="brief">${esc(e.brief || '')}</span>${edits ? `<span class="ed">${edits}</span>` : ''}${took}${status}</summary></details></div>`;
+        const kid = S.data._kidByTool && S.data._kidByTool.get(e.id);
+        const kidLink = kid ? `<a class="kid-link" href="#/s/${encodeURIComponent(kid.key)}" data-tip="Open the sub-agent session: ${esc(kid.title)}">⑂ ${esc(kid.agentName || 'sub-agent')} · ${num(kid.toolCalls)} tools</a>` : '';
+        return `<div class="ev toolev${cls}" ${attrs}>${t}<details class="tool${e.isError ? ' err' : ''}${e.parentId ? ' nested' : ''}"><summary>${toolName(e.name)}<span class="brief">${esc(e.brief || '')}</span>${kidLink}${edits ? `<span class="ed">${edits}</span>` : ''}${took}${status}</summary></details></div>`;
       }
       case 'usage':
         return `<div class="ev usage" ${attrs}>${t}<div class="note">${e.priced ? money(e.usd) : '$?'} · ${tok(totalTokens(e.usage))} tokens (in ${tok(e.usage.input)}, out ${tok(e.usage.output)}, cache ${tok(e.usage.cacheRead)}) · ${esc(e.model)}</div></div>`;
@@ -1175,6 +1245,22 @@
     </table></div><p class="hint">Click a file to see every change made to it, in order.</p>`;
   }
 
+  function renderAgents(body) {
+    const kids = S.data._kids;
+    const max = Math.max(...kids.map((k) => k.toolCalls), 1);
+    body.innerHTML = `<div class="panel"><table>
+      <tr><th>Sub-agent</th><th>Task</th><th class="num">Started</th><th class="num">Active</th><th class="num">Tools</th><th class="num">Cost</th><th style="width:16%"></th></tr>
+      ${kids
+        .map(
+          (k) => `<tr class="click" data-open="${esc(k.key)}"><td class="mono">${esc(k.agentName || '—')}</td><td>${esc(k.title)}</td><td class="num">${clock(k.startedAt)}</td><td class="num">${dur(activeMs(k))}</td>
+          <td class="num">${num(k.toolCalls)}${k.toolErrors ? ` <span style="color:var(--err)">✗${k.toolErrors}</span>` : ''}</td>
+          <td class="num">${k.costInParent ? '<span class="hint" data-tip="Included in this session’s recorded cost">in parent</span>' : costLabel(k.cost)}</td>
+          <td><div class="hbar tool" style="width:${(k.toolCalls / max) * 100}%"></div></td></tr>`,
+        )
+        .join('')}
+    </table></div><p class="hint">Click a row to open that sub-agent's own timeline.</p>`;
+  }
+
   function renderTools(body) {
     const tools = S.data._tools;
     if (!tools.length) {
@@ -1244,7 +1330,7 @@
       <div class="kpis">
         ${kpi('Spend', money(o.usd), Math.round(o.recordedShare * 100) + '% recorded, rest estimated')}
         ${kpi('Tokens', tok(totalTokens(o.usage)), Math.round(o.cacheHitRate * 100) + '% from cache')}
-        ${kpi('Sessions', num(o.sessions), dur(o.durationMs) + ' active')}
+        ${kpi('Sessions', num(o.sessions), (o.subagents ? '+' + num(o.subagents) + ' sub-agents · ' : '') + dur(o.durationMs) + ' active')}
         ${kpi('Prompts', num(o.prompts), money(o.costPerPrompt) + ' / prompt')}
         ${kpi('Tool calls', num(o.toolCalls), o.toolCalls ? ((o.toolErrors / o.toolCalls) * 100).toFixed(1) + '% failed' : '')}
         ${kpi('Code written', '+' + tok(o.linesAdded), '−' + tok(o.linesRemoved) + ' · ' + num(o.filesChanged) + ' file edits')}

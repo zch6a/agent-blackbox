@@ -75,13 +75,15 @@ export function parseDeepseek(ref: SessionRef, lines: Iterable<Record<string, un
         b.cwd = str(line.cwd) || b.cwd;
         b.touch(toMs(line.createdAt));
         if (num(line.delegationDepth) > 0) b.flags.add('subagent');
+        if (str(line.parentSession)) b.parentKey = makeKey('deepseek-harness', str(line.parentSession).replace(/^session-/, ''));
         break;
       }
       case 'user/message': {
         const kind = str(obj(data.source).kind) || 'user';
         const as = VISIBLE_SOURCES[kind];
         const text = textOf(data.content);
-        if (as === 'user') b.user(t, text, arr(data.content).filter((c) => isObject(c) && /image/.test(str(c.type))).length);
+        const images = arr(data.content).filter((c) => isObject(c) && /image/.test(str(c.type))).length;
+        if (as === 'user') b.user(t, text, images, b.flags.has('subagent') ? 'agent' : undefined);
         else if (as === 'system') b.system(t, text);
         break;
       }

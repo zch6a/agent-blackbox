@@ -34,7 +34,9 @@ type Step =
   | { k: 'shell'; cmd: string; out: string; code: number; secs: number }
   | { k: 'edit'; path: string; before: string; after: string }
   | { k: 'write'; path: string; body: string }
-  | { k: 'compact' };
+  | { k: 'compact' }
+  /** Hand a task to a sub-agent (Claude Code `Agent` tool); it runs its own little session. */
+  | { k: 'delegate'; agentType: string; description: string; task: string; result: string; secs: number; work: { tool: string; input: Record<string, unknown>; out: string }[] };
 
 interface Scenario {
   agent: AgentKind;
@@ -74,7 +76,20 @@ function scenarios(): Scenario[] {
       steps: [
         { k: 'user', text: 'Stripe is sunsetting the v2 webhook format. Migrate our billing webhooks to v3, keep idempotency, and make sure the test suite passes.' },
         { k: 'think', text: 'Start by finding every place that parses webhook payloads.' },
-        { k: 'say', text: "I'll map the webhook code first, then migrate handler by handler." },
+        { k: 'say', text: "I'll map the webhook code first, then migrate handler by handler. An explorer sub-agent can check the Stripe changelog in parallel." },
+        {
+          k: 'delegate',
+          agentType: 'Explore',
+          description: 'Summarise Stripe v2 → v3 webhook changes',
+          task: 'Read the Stripe API changelog and list every breaking change to webhook payloads between v2 and v3. Be concise; cite event names.',
+          result: 'Breaking changes: payload moved under data.object; invoice.payment_succeeded renamed to invoice.paid; refund amounts are cumulative (amount_refunded).',
+          secs: 41,
+          work: [
+            { tool: 'WebFetch', input: { url: 'https://docs.stripe.com/changelog', prompt: 'webhook payload changes' }, out: 'Changelog: data.object envelope, invoice.paid, amount_refunded is cumulative…' },
+            { tool: 'Grep', input: { pattern: 'event.type', path: '/home/dev/work/payments/src' }, out: 'src/webhooks/router.ts:12' },
+            { tool: 'Read', input: { file_path: '/home/dev/work/payments/src/webhooks/router.ts' }, out: "switch (event.type) {\n  case 'invoice.payment_succeeded':" },
+          ],
+        },
         { k: 'grep', pattern: 'stripe.webhooks|event.type ===', hits: 'src/webhooks/router.ts:12\nsrc/webhooks/invoice.ts:8\nsrc/webhooks/subscription.ts:15\nsrc/webhooks/refund.ts:9' },
         ...['router', 'invoice', 'subscription', 'refund'].map((f): Step => ({ k: 'read', path: `src/webhooks/${f}.ts`, body: code(f) })),
         { k: 'read', path: 'src/lib/idempotency.ts', body: 'export const seen = new Map<string, number>();\n' },
@@ -249,7 +264,7 @@ function schedule(sc: Scenario, now: number, rand: () => number): Timed[] {
     const gap =
       step.k === 'user' ? 60_000 + rand() * 240_000 : step.k === 'think' ? 2_000 + rand() * 6_000 : step.k === 'say' ? 3_000 + rand() * 8_000 : 1_500 + rand() * 5_000;
     t += gap;
-    const dur = step.k === 'shell' ? step.secs * 1000 : step.k === 'read' || step.k === 'grep' ? 300 + rand() * 900 : step.k === 'edit' || step.k === 'write' ? 200 + rand() * 500 : 0;
+    const dur = step.k === 'shell' || step.k === 'delegate' ? step.secs * 1000 : step.k === 'read' || step.k === 'grep' ? 300 + rand() * 900 : step.k === 'edit' || step.k === 'write' ? 200 + rand() * 500 : 0;
     const item = { step, t: Math.round(t), end: Math.round(t + dur) };
     t += dur;
     return item;
@@ -273,6 +288,7 @@ function usageFor(i: number, rand: () => number) {
 function writeClaude(dir: string, sc: Scenario, timed: Timed[], rand: () => number): void {
   const base = { sessionId: sc.id, cwd: sc.cwd, gitBranch: 'main', version: '2.9.0', userType: 'external' };
   const rows: unknown[] = [{ type: 'custom-title', customTitle: sc.title, sessionId: sc.id }];
+  const children: { agentId: string; rows: unknown[]; meta: unknown }[] = [];
   let n = 0;
   let total = 0;
   const assistant = (t: number, content: unknown[]) => {
@@ -328,12 +344,38 @@ function writeClaude(dir: string, sc: Scenario, timed: Timed[], rand: () => numb
       case 'compact':
         rows.push({ ...base, type: 'system', subtype: 'compact_boundary', timestamp: iso(t), content: 'Conversation compacted' });
         break;
+      case 'delegate': {
+        assistant(t, [{ type: 'tool_use', id, name: 'Agent', input: { description: step.description, prompt: step.task, subagent_type: step.agentType } }]);
+        result(end, id, step.result, false);
+        const agentId = `a${(0x1000000 + Math.floor(rand() * 0xeffffff)).toString(16)}${i}`;
+        const sub = { ...base, agentId, isSidechain: true };
+        const subModel = 'claude-haiku-5-5';
+        const subRows: unknown[] = [{ ...sub, type: 'user', timestamp: iso(t + 400), message: { role: 'user', content: step.task } }];
+        const span = (end - t - 2000) / (step.work.length + 1);
+        step.work.forEach((w, j) => {
+          const at = Math.round(t + 1000 + span * j);
+          const u = usageFor(j, rand);
+          total += costOf(subModel, { input: u.input, output: u.output, cacheRead: u.cacheRead, cacheWrite: 0, reasoning: 0 }).usd;
+          subRows.push({ ...sub, type: 'assistant', timestamp: iso(at), message: { id: `msg_sub_${i}_${j}`, role: 'assistant', model: subModel, content: [{ type: 'tool_use', id: `toolu_sub_${i}_${j}`, name: w.tool, input: w.input }], usage: { input_tokens: u.input, output_tokens: u.output, cache_read_input_tokens: u.cacheRead, cache_creation_input_tokens: 0 } } });
+          subRows.push({ ...sub, type: 'user', timestamp: iso(at + Math.round(span * 0.6)), message: { role: 'user', content: [{ type: 'tool_result', tool_use_id: `toolu_sub_${i}_${j}`, content: w.out }] } });
+        });
+        subRows.push({ ...sub, type: 'assistant', timestamp: iso(end - 500), message: { id: `msg_sub_${i}_end`, role: 'assistant', model: subModel, content: [{ type: 'text', text: step.result }], usage: { input_tokens: 300, output_tokens: 120, cache_read_input_tokens: 12000, cache_creation_input_tokens: 0 } } });
+        children.push({ agentId, rows: subRows, meta: { agentType: step.agentType, description: step.description, toolUseId: id, spawnDepth: 1 } });
+        break;
+      }
     }
   });
+  // Claude Code's cost-state is process-wide, so it includes the sub-agents' cost.
   rows.push({ type: 'cost-state', sessionId: sc.id, startTime: timed[0]?.t ?? 0, totalCostUSD: Math.round(total * 1e4) / 1e4, modelUsage: {} });
   const projectDir = join(dir, 'claude', 'projects', sc.cwd.replace(/[^A-Za-z0-9]/g, '-'));
   mkdirSync(projectDir, { recursive: true });
   writeFileSync(join(projectDir, `${sc.id}.jsonl`), lines(rows));
+  for (const child of children) {
+    const subDir = join(projectDir, sc.id, 'subagents');
+    mkdirSync(subDir, { recursive: true });
+    writeFileSync(join(subDir, `agent-${child.agentId}.jsonl`), lines(child.rows));
+    writeFileSync(join(subDir, `agent-${child.agentId}.meta.json`), JSON.stringify(child.meta));
+  }
 }
 
 // ---------- Codex ----------

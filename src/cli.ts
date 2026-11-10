@@ -5,10 +5,11 @@ import { ADAPTERS, parseAgent } from './adapters/index.ts';
 import { AmbiguousSessionError, cacheDir, discover, listSessions, loadSession, resolveSession, rootsFor, SessionNotFoundError, type CatalogOptions } from './catalog.ts';
 import { writeDemo } from './demo.ts';
 import { exportHtml, exportJson, exportMarkdown, type ExportFormat } from './export.ts';
-import { c, money, parseSince, setColor } from './format.ts';
+import { c, money, parseSince, plural, setColor } from './format.ts';
 import { PRICES_UPDATED } from './pricing.ts';
 import { redactSession } from './redact.ts';
 import { renderList, renderSession, renderStats } from './render/terminal.ts';
+import { printPaged } from './pager.ts';
 import { serve } from './server.ts';
 import { hasSqlite } from './sqlite.ts';
 import { aggregate, GROUPS, overview, type GroupBy } from './stats.ts';
@@ -43,8 +44,8 @@ ${c.bold('Common options')}
       --no-color         Disable colors (also respects NO_COLOR)
       --demo             Use the fictional demo sessions instead of your own logs
 
-${c.bold('list')}       -n, --limit <n> (default 25)   --all   -q, --search <text>   --sort time|cost|tokens|tools
-${c.bold('show')}       --thinking   --full   --cost   --errors   --no-tools
+${c.bold('list')}       -n, --limit <n> (default 25)   --all   -q, --search <text>   --sort time|cost|tokens|tools   --subagents
+${c.bold('show')}       --thinking   --full   --cost   --errors   --no-tools   --no-pager
 ${c.bold('stats')}      --by day|week|month|agent|model|project|tool (default agent)
 ${c.bold('export')}     -o, --output <file|->   -f, --format html|md|json   --redact   --thinking   --outputs
 ${c.bold('ui')}         --port <n> (default 4777)   --no-open
@@ -87,6 +88,8 @@ const OPTIONS = {
   host: { type: 'string' },
   open: { type: 'boolean', default: true },
   'no-open': { type: 'boolean' },
+  subagents: { type: 'boolean' },
+  'no-pager': { type: 'boolean' },
   demo: { type: 'boolean' },
   help: { type: 'boolean', short: 'h' },
   version: { type: 'boolean', short: 'v' },
@@ -150,6 +153,9 @@ function filterSessions(list: SessionSummary[], v: Values): SessionSummary[] {
 
 async function cmdList(v: Values): Promise<void> {
   let list = filterSessions(await listSessions(catalogOptions(v)), v);
+  // Sub-agents are noise in a list of "what did I do"; their parents show a ⑂ count instead.
+  const hidden = v.subagents ? 0 : list.filter((s) => s.parentKey).length;
+  if (!v.subagents) list = list.filter((s) => !s.parentKey);
   const sort = v.sort ?? 'time';
   const sorters: Record<string, (a: SessionSummary, b: SessionSummary) => number> = {
     time: (a, b) => b.endedAt - a.endedAt,
@@ -169,25 +175,34 @@ async function cmdList(v: Values): Promise<void> {
     return;
   }
   console.log(renderList(list));
-  if (total > list.length) console.log(c.dim(`\n${list.length} of ${total} sessions shown · --all or -n <count> for more`));
+  const notes: string[] = [];
+  if (total > list.length) notes.push(`${list.length} of ${total} sessions shown · --all or -n <count> for more`);
+  if (hidden) notes.push(`${plural(hidden, 'sub-agent session')} hidden · --subagents to include`);
+  if (notes.length) console.log(c.dim('\n' + notes.join('\n')));
   else if (!total) console.log(c.dim('\nRun `blackbox doctor` to see where agent-blackbox looked.'));
 }
 
 async function cmdShow(v: Values, query: string | undefined): Promise<void> {
-  const ref = await resolveSession(query ?? 'last', catalogOptions(v));
-  const session = await loadSession(ref);
+  const opts = catalogOptions(v);
+  const ref = await resolveSession(query ?? 'last', opts);
+  const [loaded, all] = await Promise.all([loadSession(ref), listSessions({ ...opts, onProgress: undefined })]);
+  // Family links (children, cost inside parent) are computed across sessions, so take them from the list.
+  const summary = all.find((s) => s.key === ref.key);
+  const session = { ...loaded, ...(summary?.costInParent ? { costInParent: true } : {}), ...(summary?.children ? { children: summary.children } : {}) };
   if (v.json) {
     process.stdout.write(JSON.stringify(session, null, 2) + '\n');
     return;
   }
-  console.log(
+  await printPaged(
     renderSession(session, {
       thinking: !!v.thinking,
       full: !!v.full,
       cost: !!v.cost,
       errorsOnly: !!v.errors,
       noTools: !!v['no-tools'],
+      children: all.filter((s) => s.parentKey === ref.key).sort((a, b) => a.startedAt - b.startedAt),
     }),
+    { enabled: !v['no-pager'] },
   );
 }
 

@@ -212,7 +212,7 @@ function buildOpencode(ref: SessionRef, s: RawSession, messages: RawMessage[]): 
   const b = new SessionBuilder(ref);
   b.title = s.title.replace(/^New session - \d{4}-\d{2}-\d{2}T[\d:.Z-]+$/, '');
   b.cwd = s.directory;
-  if (s.parentId) b.flags.add('subagent');
+  if (s.parentId) b.parentKey = makeKey('opencode', s.parentId);
   b.touch(s.created);
   let allCostsRecorded = messages.some((m) => m.data.role === 'assistant');
   let recorded = 0;
@@ -257,7 +257,7 @@ function buildOpencode(ref: SessionRef, s: RawSession, messages: RawMessage[]): 
     }
 
     if (role === 'user') {
-      b.user(t, textParts.join('\n'), images);
+      b.user(t, textParts.join('\n'), images, s.parentId ? 'agent' : undefined);
       continue;
     }
     if (role !== 'assistant') continue;
@@ -289,5 +289,3 @@ function buildOpencode(ref: SessionRef, s: RawSession, messages: RawMessage[]): 
   b.touch(s.updated);
   return b.build();
 }
-
-export const _internal = { buildOpencode, toolEdits };

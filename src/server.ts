@@ -7,7 +7,7 @@ import { discover, listSessions, loadSession, type CatalogOptions } from './cata
 import { scriptJson, toPayload } from './payload.ts';
 import { PRICES_UPDATED } from './pricing.ts';
 import { aggregate, GROUPS, overview, type GroupBy } from './stats.ts';
-import type { Session, SessionSummary } from './types.ts';
+import { ownCost, type Session, type SessionSummary } from './types.ts';
 import { uiFile } from './ui-assets.ts';
 import { VERSION } from './version.ts';
 
@@ -172,7 +172,10 @@ export async function serve(opts: ServeOptions = {}): Promise<RunningServer> {
         const list = all.filter((s) => (!since || s.endedAt >= since) && (!agent || s.agent === agent));
         const groups: Partial<Record<GroupBy, ReturnType<typeof aggregate>>> = {};
         for (const by of GROUPS) groups[by] = aggregate(list, by, { fillGaps: true });
-        const top = [...list].sort((a, b) => b.cost.usd - a.cost.usd).slice(0, 12);
+        const top = list
+          .filter((s) => !s.costInParent)
+          .sort((a, b) => ownCost(b) - ownCost(a))
+          .slice(0, 12);
         return json(res, { overview: overview(list), groups, top });
       }
       const m = /^\/api\/session\/([^/]+)(?:\/event\/(\d+))?$/.exec(path);

@@ -6,7 +6,7 @@ import { classifyUserText } from '../src/adapters/common.ts';
 import { deepseekAdapter } from '../src/adapters/deepseek.ts';
 import { opencodeAdapter } from '../src/adapters/opencode.ts';
 import type { Session, ToolEvent } from '../src/types.ts';
-import { claudeLines, CLAUDE_ID, CODEX_ID, codexLines, DSH_ID, makeFixture, OPENCODE_ID, ref, type Fixture } from './helpers.ts';
+import { claudeLines, CLAUDE_ID, CLAUDE_SUBAGENT_ID, CODEX_ID, codexLines, DSH_ID, iso, makeFixture, OPENCODE_ID, ref, type Fixture } from './helpers.ts';
 
 const tools = (s: Session) => s.events.filter((e): e is ToolEvent => e.kind === 'tool');
 const kinds = (s: Session) => s.events.map((e) => e.kind);
@@ -20,9 +20,10 @@ after(() => fx.cleanup());
 describe('Claude Code adapter', () => {
   it('discovers sessions by file name', async () => {
     const refs = await claudeAdapter.discover([fx.roots.claude]);
-    assert.equal(refs.length, 1);
-    assert.equal(refs[0]!.id, CLAUDE_ID);
-    assert.equal(refs[0]!.key, `claude-code:${CLAUDE_ID}`);
+    const top = refs.filter((r) => !r.id.startsWith('agent-'));
+    assert.equal(top.length, 1);
+    assert.equal(top[0]!.id, CLAUDE_ID);
+    assert.equal(top[0]!.key, `claude-code:${CLAUDE_ID}`);
   });
 
   it('parses prompts, tools, edits, usage and recorded cost', async () => {
@@ -59,7 +60,36 @@ describe('Claude Code adapter', () => {
 
   it('prefers the cost Claude Code recorded itself', async () => {
     const s = await parseClaude(ref('claude-code', CLAUDE_ID), claudeLines() as Record<string, unknown>[]);
-    assert.deepEqual(s.cost, { usd: 0.0421, source: 'recorded' });
+    assert.equal(s.cost.usd, 0.0421);
+    assert.equal(s.cost.source, 'recorded');
+  });
+
+  it('estimates the part of a session that cost-state does not cover', async () => {
+    // cost-state started 30 s in: the first requests (t = 5 s, 10 s, 14 s) are not in the recorded total.
+    const lines = (claudeLines() as Record<string, unknown>[]).map((l) => (l.type === 'cost-state' ? { ...l, startTime: Date.parse(iso(30)) } : l));
+    const s = await parseClaude(ref('claude-code', CLAUDE_ID), lines);
+    assert.equal(s.cost.source, 'mixed');
+    const early = (100 * 2 + 50 * 10 + 1000 * 0.1 + 200 * 2.5) / 1e6 + (100 * 2 + 80 * 10 + 1000 * 0.1 + 200 * 2.5) / 1e6 + (100 * 2 + 50 * 10 + 1000 * 0.1 + 200 * 2.5) / 1e6;
+    assert.ok(Math.abs(s.cost.usd - (0.0421 + early)) < 1e-12);
+    // A cost-state written when an old session was merely reopened covers nothing.
+    const reopened = (claudeLines() as Record<string, unknown>[]).map((l) => (l.type === 'cost-state' ? { ...l, startTime: Date.parse(iso(9999)), totalCostUSD: 0 } : l));
+    assert.equal((await parseClaude(ref('claude-code', CLAUDE_ID), reopened)).cost.source, 'estimated');
+  });
+
+  it('reads sub-agent logs and links them to the parent tool call', async () => {
+    const refs = await claudeAdapter.discover([fx.roots.claude]);
+    const child = refs.find((r) => r.id === CLAUDE_SUBAGENT_ID);
+    assert.ok(child, 'sub-agent file is discovered');
+    const s = await claudeAdapter.load(child!);
+    assert.equal(s.parentKey, `claude-code:${CLAUDE_ID}`);
+    assert.equal(s.parentToolId, 'tu_task');
+    assert.equal(s.agentName, 'Explore');
+    assert.equal(s.title, 'Find rounding helpers');
+    assert.equal(s.prompts, 0, 'a delegated task is not a human prompt');
+    const task = s.events.find((e) => e.kind === 'user');
+    assert.ok(task && task.kind === 'user' && task.from === 'agent');
+    assert.ok(s.flags.includes('subagent'));
+    assert.equal(s.toolCalls, 1);
   });
 
   it('falls back to an estimate without cost-state', async () => {

@@ -19,10 +19,29 @@ Found by using it on real logs, the demo data, and a phone-sized viewport.
 
 60 tests passing.
 
-## Round 2 — backlog
+## Round 2 — v0.2.0 (2026-11-10)
 
-- [ ] Read every source file top to bottom with fresh eyes; look for dead code and unclear names.
-- [ ] Adapter edge cases: Claude sub-agent files (`<session>/subagents/*.jsonl`), Codex sessions forked from another, OpenCode child sessions, DeepSeek sub-agent sessions (63 locally) — link parent and child.
-- [ ] Keyboard and screen-reader pass on the UI (focus states, aria labels, contrast).
-- [ ] `blackbox show` on a 6,000-tool session: check speed and readability.
-- [ ] README: add a short animated GIF of replay (scripted capture).
+The big finding of this round was a **cost bug**: Claude Code's `cost-state` is not always a full record. On this machine, 25 of 56 sessions that have one only got it partway through (it appeared in a later Claude Code version), and some got it only because an old session was reopened weeks later — one session's "recorded" cost was $53 against $1,743 of actual usage. Treating `cost-state` as authoritative under-reported those sessions badly.
+
+- **Costs:** requests before the agent's own record starts are now estimated and added; such sessions are labelled `mixed` and the UI explains which part was recorded. A sub-agent counts as *inside* its parent only if it ran while the parent was recording.
+- **Sub-agents (new):** 702 Claude Code sub-agent logs (`<session>/subagents/agent-*.jsonl` + `meta.json`) were being ignored entirely. They are now parsed and linked to the parent's exact `Agent` tool call via `toolUseId`; Codex (`thread_spawn.parent_thread_id`), DeepSeek Harness (`parentSession`) and OpenCode (`parent_id`) children are linked too. Checked against real data: for parents with complete records, recorded ≈ own estimate + children's estimates (e.g. $142 vs $134, $357 vs $375), which confirms Claude Code's recorded cost includes its sub-agents, so those are never added twice.
+  - The delegated task is shown as "Task from the parent agent", not counted as a human prompt.
+  - `list` hides sub-agents by default (`--subagents` to include); parents show `⑂N`. `show` marks the tool call that spawned each sub-agent and lists them at the end. `last` means the last *top-level* session.
+  - UI: a Sub-agents chip in the filters, a Sub-agents tab, `⑂ Explore · 3 tools` links on tool rows, a parent link on child sessions, and parent rows show the whole family's cost.
+  - Insights and `stats` count top-level sessions and report sub-agents separately; per-model costs spread a recorded total across the whole family.
+  - Demo data now includes a sub-agent.
+- **Cache:** invalidation is now a hash of the parser source code instead of a hand-bumped number — a stale cache (from my own forgotten bump) was serving pre-fix summaries during this round.
+- **Accessibility:** measured contrast and fixed every pair under 4.5:1 (secondary text in both themes, status colours on their tinted backgrounds, white-on-orange button text at 2.6:1 → dark text at 7.3:1); visible focus rings; proper `nav`/`aria-current` instead of a misused listbox; labelled search inputs; a text alternative for the flight-path canvas; filter chips are real buttons with `aria-pressed`.
+- **Terminal:** `show` pipes long output through `$PAGER` (`less -FRX`) like git, with `--no-pager`. The 6,389-tool session renders in 2.2 s (the 20 s I first measured was PowerShell capturing 14,000 lines). Not verified in an interactive terminal from this environment, which has no TTY.
+- **Code:** enabled `noUnusedLocals`/`noUnusedParameters`; removed leftover helpers and hacks found by an unreferenced-export scan.
+- **UI:** the find box and Replay wrap together as one group instead of Replay falling onto its own line.
+
+64 tests passing.
+
+## Round 3 — backlog
+
+- [ ] README: a short animated GIF of replay (scripted headless capture of frames).
+- [ ] Session list for 1,000+ sessions: measure render time; virtualize if needed.
+- [ ] `stats --by project` merges different projects with the same folder name; disambiguate.
+- [ ] Live sessions: refresh the open session when its log grows (tail the file).
+- [ ] Try the pager in a real terminal.

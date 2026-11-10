@@ -26,12 +26,16 @@ export interface Usage {
 export interface Cost {
   usd: number;
   /**
-   * - `recorded`: the agent wrote the cost into its own log (most trustworthy)
+   * - `recorded`: the agent wrote the cost into its own log for the whole session
+   * - `mixed`: recorded for part of the session (e.g. after an agent upgrade started
+   *   recording costs), estimated for the rest
    * - `estimated`: computed from token counts and the built-in price table
    * - `partial`: estimated, but some models had no known price
    * - `unknown`: no usage data at all
    */
-  source: 'recorded' | 'estimated' | 'partial' | 'unknown';
+  source: 'recorded' | 'mixed' | 'estimated' | 'partial' | 'unknown';
+  /** For `recorded`/`mixed`: epoch ms from which the agent's own accounting covers the session. */
+  recordedSince?: number;
 }
 
 export interface FileEdit {
@@ -53,6 +57,8 @@ export interface UserEvent extends EventBase {
   kind: 'user';
   text: string;
   images?: number;
+  /** Set when the "prompt" was written by a parent agent delegating a task, not by a human. */
+  from?: 'agent';
 }
 
 export interface AssistantEvent extends EventBase {
@@ -160,6 +166,19 @@ export interface SessionSummary {
   modelUsage: Record<string, { usd: number; tokens: number }>;
   flags: SessionFlag[];
   sizeBytes: number;
+  /** For sub-agent sessions: the key of the session that spawned it. */
+  parentKey?: string;
+  /** For sub-agent sessions: the parent's tool call that spawned it (Claude Code `toolUseId`). */
+  parentToolId?: string;
+  /** Sub-agent type or nickname, e.g. `Explore` or `Ampere`. */
+  agentName?: string;
+  /** Computed when listing: how many sub-agent sessions this session spawned. */
+  children?: number;
+  /**
+   * Computed when listing: this sub-agent's cost is already part of its parent's
+   * recorded cost (Claude Code records process-wide cost), so totals must not add it again.
+   */
+  costInParent?: boolean;
 }
 
 export interface Session extends SessionSummary {
@@ -185,6 +204,11 @@ export function addUsage(into: Usage, u: Partial<Usage>): Usage {
   into.cacheWrite += u.cacheWrite ?? 0;
   into.reasoning += u.reasoning ?? 0;
   return into;
+}
+
+/** The cost a session adds to totals: 0 when it is already counted in its parent's recorded cost. */
+export function ownCost(s: Pick<SessionSummary, 'cost' | 'costInParent'>): number {
+  return s.costInParent ? 0 : s.cost.usd;
 }
 
 export function totalTokens(u: Usage): number {

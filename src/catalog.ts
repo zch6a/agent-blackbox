@@ -1,7 +1,10 @@
+import { createHash } from 'node:crypto';
+import { readdirSync, readFileSync } from 'node:fs';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import { availableParallelism } from 'node:os';
-import { Worker } from 'node:worker_threads';
 import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { Worker } from 'node:worker_threads';
 import { ADAPTERS, adapterFor } from './adapters/index.ts';
 import type { AgentKind, Session, SessionRef, SessionSummary } from './types.ts';
 import { home, mapLimit } from './util.ts';
@@ -16,8 +19,39 @@ export interface CatalogOptions {
   onProgress?: (done: number, total: number) => void;
 }
 
-/** Bump when parsing changes in a way that invalidates cached summaries. */
-const CACHE_SCHEMA = 4;
+/** Bump when the cache file layout changes. */
+const CACHE_SCHEMA = 6;
+
+let fingerprint: string | undefined;
+
+/**
+ * Cached summaries are only valid for the exact parsing code that produced
+ * them. Hashing the parser sources means any change — a release or a local
+ * edit — invalidates the cache automatically, instead of relying on someone
+ * remembering to bump a number.
+ */
+function parserFingerprint(): string {
+  if (fingerprint) return fingerprint;
+  const here = dirname(fileURLToPath(import.meta.url));
+  const hash = createHash('sha1').update(VERSION);
+  const files: string[] = [];
+  for (const dir of [here, join(here, 'adapters')]) {
+    try {
+      for (const name of readdirSync(dir).sort()) if (/\.(ts|js)$/.test(name) && !name.endsWith('.d.ts')) files.push(join(dir, name));
+    } catch {
+      // unreadable install dir: fall back to the version alone
+    }
+  }
+  for (const file of files) {
+    try {
+      hash.update(file.slice(here.length)).update(readFileSync(file));
+    } catch {
+      // ignore
+    }
+  }
+  fingerprint = `${VERSION}+${hash.digest('hex').slice(0, 12)}`;
+  return fingerprint;
+}
 
 interface CacheEntry {
   mtimeMs: number;
@@ -44,11 +78,11 @@ function cachePath(): string {
 async function readCache(): Promise<CacheFile> {
   try {
     const parsed = JSON.parse(await readFile(cachePath(), 'utf8')) as CacheFile;
-    if (parsed.schema === CACHE_SCHEMA && parsed.version === VERSION && parsed.entries) return parsed;
+    if (parsed.schema === CACHE_SCHEMA && parsed.version === parserFingerprint() && parsed.entries) return parsed;
   } catch {
     // missing or corrupt cache: start fresh
   }
-  return { schema: CACHE_SCHEMA, version: VERSION, entries: {} };
+  return { schema: CACHE_SCHEMA, version: parserFingerprint(), entries: {} };
 }
 
 async function writeCache(cache: CacheFile): Promise<void> {
@@ -159,7 +193,7 @@ async function parseInWorkers(
 export async function listSessions(opts: CatalogOptions = {}): Promise<SessionSummary[]> {
   const refs = await discover(opts);
   const useCache = opts.cache !== false;
-  const cache = useCache ? await readCache() : { schema: CACHE_SCHEMA, version: VERSION, entries: {} as Record<string, CacheEntry> };
+  const cache = useCache ? await readCache() : { schema: CACHE_SCHEMA, version: parserFingerprint(), entries: {} as Record<string, CacheEntry> };
   let dirty = false;
   let done = 0;
   const summaries: (SessionSummary | null)[] = new Array(refs.length).fill(null);
@@ -212,7 +246,43 @@ export async function listSessions(opts: CatalogOptions = {}): Promise<SessionSu
     }
     if (dirty) await writeCache(cache);
   }
-  return summaries.filter((s): s is SessionSummary => s !== null).sort((a, b) => b.endedAt - a.endedAt);
+  return linkFamilies(summaries.filter((s): s is SessionSummary => s !== null)).sort((a, b) => b.endedAt - a.endedAt);
+}
+
+/**
+ * Connect sub-agent sessions to their parents: count children, and mark
+ * children whose cost is already inside the parent's recorded total
+ * (Claude Code's `cost-state` is process-wide, so it includes its sub-agents).
+ */
+export function linkFamilies(list: SessionSummary[]): SessionSummary[] {
+  const byKey = new Map(list.map((s) => [s.key, s]));
+  const children = new Map<string, number>();
+  for (const s of list) if (s.parentKey) children.set(s.parentKey, (children.get(s.parentKey) ?? 0) + 1);
+  const root = (s: SessionSummary): SessionSummary => {
+    let cur = s;
+    for (let i = 0; i < 8 && cur.parentKey; i++) {
+      const up = byKey.get(cur.parentKey);
+      if (!up) break;
+      cur = up;
+    }
+    return cur;
+  };
+  return list.map((s) => {
+    const { children: _c, costInParent: _p, ...out } = s;
+    const linked: SessionSummary = out;
+    const n = children.get(s.key);
+    if (n) linked.children = n;
+    if (s.parentKey) {
+      const top = root(s);
+      if (top !== s && top.agent === 'claude-code') {
+        const since = top.cost.recordedSince;
+        // Inside the parent's recorded total only if it ran while the parent was recording costs.
+        const covered = since !== undefined ? s.startedAt >= since : top.cost.source === 'recorded';
+        if (covered) linked.costInParent = true;
+      }
+    }
+    return linked;
+  });
 }
 
 export class SessionNotFoundError extends Error {}
@@ -235,8 +305,11 @@ export async function resolveSession(query: string, opts: CatalogOptions = {}): 
   const q = query.trim();
   const nth = /^(?:last|latest)$/i.test(q) ? 1 : /^-(\d+)$/.exec(q) ? Number(/^-(\d+)$/.exec(q)![1]) : 0;
   if (nth) {
-    const ref = refs[nth - 1];
-    if (!ref) throw new SessionNotFoundError(`Only ${refs.length} sessions exist.`);
+    // "last" means the last session a human ran, not the sub-agent that happened to finish last.
+    const top = (await listSessions({ ...opts, onProgress: undefined })).filter((s) => !s.parentKey);
+    const pick = top[nth - 1];
+    const ref = pick && refs.find((r) => r.key === pick.key);
+    if (!ref) throw new SessionNotFoundError(`Only ${top.length} sessions exist.`);
     return ref;
   }
   const exact = refs.find((r) => r.key === q || r.id === q);

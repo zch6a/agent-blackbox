@@ -12,8 +12,14 @@ after(() => rmSync(dir, { recursive: true, force: true }));
 describe('demo data', () => {
   it('goes through the real parsers for all four agents', async () => {
     const demo = writeDemo(join(dir, 'demo'), Date.parse('2026-11-10T12:00:00Z'));
-    const list = await listSessions({ roots: demo.roots, cache: false });
+    const all = await listSessions({ roots: demo.roots, cache: false });
+    const list = all.filter((s) => !s.parentKey);
     assert.equal(list.length, 8);
+    const subs = all.filter((s) => s.parentKey);
+    assert.equal(subs.length, 1, 'the Stripe session delegates to one sub-agent');
+    assert.equal(subs[0]!.agentName, 'Explore');
+    assert.equal(subs[0]!.costInParent, true);
+    assert.equal(list.find((s) => s.key === subs[0]!.parentKey)?.children, 1);
     const byAgent = new Map<string, number>();
     for (const s of list) byAgent.set(s.agent, (byAgent.get(s.agent) ?? 0) + 1);
     assert.deepEqual(Object.fromEntries(byAgent), { 'claude-code': 3, codex: 2, 'deepseek-harness': 2, opencode: 1 });

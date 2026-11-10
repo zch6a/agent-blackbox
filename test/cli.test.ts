@@ -69,6 +69,23 @@ describe('cli', () => {
     assert.ok(rows.every((r: Record<string, unknown>) => !('events' in r)));
   });
 
+  it('list hides sub-agents unless asked', async () => {
+    const { out } = await run('list', '--json', '-a', 'claude');
+    assert.equal(JSON.parse(out).length, 1);
+    const { out: all } = await run('list', '--json', '-a', 'claude', '--subagents');
+    assert.equal(JSON.parse(all).length, 2);
+  });
+
+  it('show links the sub-agent and does not double count its cost', async () => {
+    const { out } = await run('show', CLAUDE_ID.slice(0, 8));
+    assert.match(out, /Sub-agents \(1\)/);
+    assert.match(out, /Find rounding helpers/);
+    const { out: stats } = await run('stats', '--json');
+    const o = JSON.parse(stats).overview;
+    assert.equal(o.sessions, 4);
+    assert.equal(o.subagents, 1);
+  });
+
   it('list filters by agent and project', async () => {
     const { out } = await run('list', '--json', '-a', 'codex,claude', '-p', 'shop');
     const rows = JSON.parse(out);
@@ -168,7 +185,11 @@ describe('server', () => {
       const ok = await get(srv.url + 'api/sessions', { 'x-blackbox-token': token! });
       assert.equal(ok.status, 200);
       const { sessions } = JSON.parse(ok.body);
-      assert.equal(sessions.length, 4);
+      assert.equal(sessions.length, 5, 'four sessions plus one Claude Code sub-agent');
+      const parent = sessions.find((s: { key: string }) => s.key === `claude-code:${CLAUDE_ID}`);
+      const child = sessions.find((s: { parentKey?: string }) => s.parentKey);
+      assert.equal(parent.children, 1);
+      assert.equal(child.costInParent, true, "inside the parent's recorded cost");
 
       const one = await get(srv.url + 'api/session/' + encodeURIComponent(sessions[0].key), { 'x-blackbox-token': token! });
       assert.equal(one.status, 200);

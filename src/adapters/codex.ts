@@ -140,6 +140,11 @@ export async function parseCodex(ref: SessionRef, lines: AsyncIterable<Record<st
       b.touch(toMs(payload.timestamp) || t);
       const source = payload.source;
       if (isObject(source) ? 'subagent' in source : /sub.?agent/i.test(str(source))) b.flags.add('subagent');
+      // { subagent: { thread_spawn: { parent_thread_id, agent_nickname, agent_path } } }
+      const spawn = obj(obj(obj(source).subagent).thread_spawn);
+      if (str(spawn.parent_thread_id)) b.parentKey = makeKey('codex', str(spawn.parent_thread_id));
+      const nick = str(spawn.agent_nickname) || str(spawn.agent_path).replace(/^.*\//, '');
+      if (nick) b.agentName = nick;
       continue;
     }
     if (type === 'turn_context') {
@@ -213,7 +218,7 @@ export async function parseCodex(ref: SessionRef, lines: AsyncIterable<Record<st
           const images = countImages(payload.content);
           if (human.length || images) {
             sawResponseUser = true;
-            b.user(t, human.join('\n'), images);
+            b.user(t, human.join('\n'), images, b.flags.has('subagent') ? 'agent' : undefined);
           }
         } else if (role === 'assistant') {
           b.assistant(t, text, model);
@@ -259,7 +264,7 @@ export async function parseCodex(ref: SessionRef, lines: AsyncIterable<Record<st
   }
 
   if (!sawResponseUser && fallbackUsers.length) {
-    for (const u of fallbackUsers) b.user(u.t, u.text, u.images);
+    for (const u of fallbackUsers) b.user(u.t, u.text, u.images, b.flags.has('subagent') ? 'agent' : undefined);
     b.events.sort((x, y) => x.t - y.t); // stable: keeps same-timestamp order
   }
   if (openTurn) b.flags.add('incomplete');

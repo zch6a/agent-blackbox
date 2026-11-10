@@ -40,12 +40,13 @@ Every coding agent already writes a detailed log to disk. They are just unreadab
 | ▶️ **Replay** | Watch the session unfold step by step at 1×–64×, with a scrubber, a live clock and a running cost. |
 | 🧯 **Errors mode** | One key (`e`) shows only what failed — with the prompt that led to it. |
 | 📝 **Files** | Every file the agent touched, every diff, in order. |
+| ⑂ **Sub-agents** | Sessions spawned by another agent (Claude Code `Agent` tasks, Codex sub-agents, DeepSeek Harness and OpenCode child sessions) are linked to the exact tool call that started them, and their cost is never counted twice. |
 | 💸 **Costs you can trust** | Uses the cost the agent recorded itself when available. Estimates are always marked `~`. Duplicated usage lines are de-duplicated (a naive parser over-counts Claude Code tokens 2–3×). |
 | 📊 **Insights** | Daily spend, cost by agent / model / project, most-used tools, failure rates, cache hit rate, most expensive sessions. |
 | 🔒 **Privacy check** | Flags DeepSeek Harness sessions whose logs were uploaded to DeepSeek. |
 | 📦 **Shareable replays** | `blackbox export last --redact` writes one self-contained HTML file with API keys, tokens, e-mails and your home path scrubbed. |
 | ⌨️ **Terminal-first** | `list`, `show`, `stats`, `export`, `doctor` — with `--json` for scripts. |
-| ⚡ **Fast** | Summaries are cached. 366 real sessions and 100B+ tokens: about 40 s the first time, 0.3 s after that. |
+| ⚡ **Fast** | Logs are parsed on all CPU cores and summaries are cached. 1,041 real sessions (9.5 GB of logs, 111B tokens): about 17 s the first time, 0.3 s after that. |
 
 <img src="docs/screenshot-insights.png" alt="The Insights page: total spend, tokens, sessions, prompts, tool calls, a daily spend chart, a privacy panel and breakdowns by agent and model" width="900" />
 
@@ -79,8 +80,8 @@ b6d2770e  deepseek 3d ago     51m  ~$0.31  12.4M    344  ↑ ✗1  整理笔记�
 | Command | What it does |
 |---|---|
 | `blackbox` / `blackbox ui` | Open the local web UI. `--port`, `--no-open` |
-| `blackbox list` | Recent sessions. `--since 7d`, `--sort cost\|time\|tokens\|tools`, `-q <search>`, `-p <project>`, `-n 50`, `--all`, `--json` |
-| `blackbox show <session>` | Replay a session in the terminal. `--errors`, `--thinking`, `--cost`, `--full`, `--no-tools`, `--json` |
+| `blackbox list` | Recent sessions. `--since 7d`, `--sort cost\|time\|tokens\|tools`, `-q <search>`, `-p <project>`, `-n 50`, `--all`, `--subagents`, `--json` |
+| `blackbox show <session>` | Replay a session in the terminal (long output goes through `$PAGER`). `--errors`, `--thinking`, `--cost`, `--full`, `--no-tools`, `--no-pager`, `--json` |
 | `blackbox stats` | Totals plus a breakdown `--by day\|week\|month\|agent\|model\|project\|tool` |
 | `blackbox export <session>` | `-o replay.html`, `-f html\|md\|json`, `--redact`, `-o -` for stdout |
 | `blackbox doctor` | Which agents were found, where, and whether your Node.js supports everything |
@@ -105,6 +106,8 @@ Adding another agent is one file — see [CONTRIBUTING.md](CONTRIBUTING.md).
 Getting the numbers right is the point, so here is exactly how they are computed:
 
 - **Cost.** If the agent logged its own cost (Claude Code `cost-state`, OpenCode `cost`), that number is used and labelled *recorded*. Otherwise it is *estimated* from token counts and public list prices (`~$1.23`). If a model has no known price the estimate is *partial* (`~$1.23+`). Your plan or contract may be cheaper — see [custom prices](#custom-prices).
+- **Partly recorded sessions.** An agent's own accounting can start in the middle of a session: Claude Code only began writing `cost-state` in later versions, and reopening an old session starts a fresh record that covers almost nothing. Requests from before the record starts are estimated and added, and the cost is labelled *mixed*. (On one real machine, 25 of 56 sessions with a `cost-state` would otherwise have been under-reported — one by more than $1,000.)
+- **Sub-agents.** Claude Code's recorded cost is process-wide, so it already includes the sub-agents it spawned while recording. Those sub-agents show *in parent* instead of a price and are left out of totals; sub-agents that ran before recording started are estimated and added.
 - **Tokens.** `input` never includes cached tokens; cache reads and writes are counted separately. Claude Code repeats the same usage on every line of a split response, and Codex re-emits identical token counters — both are de-duplicated.
 - **Prompts** means things a human typed. Injected context (`<system-reminder>`, `<environment_context>`, AGENTS.md, IDE context, background-task notifications, cron/loop prompts) is shown as system notes, not counted.
 - **Active time** excludes idle gaps longer than 5 minutes, so a session left open overnight does not count as 14 hours of work.
