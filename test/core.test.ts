@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { describe, it } from 'node:test';
 import zlib from 'node:zlib';
-import { activeTime, SessionBuilder } from '../src/builder.ts';
+import { absolutePath, activeTime, SessionBuilder } from '../src/builder.ts';
 import { errorBrief, toolBrief } from '../src/describe.ts';
 import { fromApplyPatch, fromReplace, fromUnifiedDiff, fromWrite, guessEdits } from '../src/edits.ts';
 import { duration, fit, money, parseSince, tokens, width } from '../src/format.ts';
@@ -134,6 +134,15 @@ describe('builder', () => {
     assert.equal(s.toolCalls, 1);
     const t = s.events[0];
     assert.ok(t && t.kind === 'tool' && t.endT === 3000);
+  });
+
+  it('resolves relative edit paths against the working directory', () => {
+    assert.equal(absolutePath('src/a.ts', '/work/api'), '/work/api/src/a.ts');
+    assert.equal(absolutePath('./src/a.ts', '/work/api/'), '/work/api/src/a.ts');
+    assert.equal(absolutePath('src/a.ts', 'C:\\work\\api'), 'C:\\work\\api\\src\\a.ts');
+    assert.equal(absolutePath('/etc/hosts', '/work/api'), '/etc/hosts');
+    assert.equal(absolutePath('D:\\x.txt', 'C:\\work'), 'D:\\x.txt');
+    assert.equal(absolutePath('a.ts', ''), 'a.ts');
   });
 
   it('measures active time without idle gaps', () => {

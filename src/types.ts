@@ -162,6 +162,10 @@ export interface SessionSummary {
   cost: Cost;
   /** Calls per tool name. */
   toolCounts: Record<string, number>;
+  /** Wall time spent inside each tool (call → result), in ms. */
+  toolMs: Record<string, number>;
+  /** Failed calls per tool name. */
+  toolErrorCounts: Record<string, number>;
   /** Estimated cost and total tokens per model. */
   modelUsage: Record<string, { usd: number; tokens: number }>;
   flags: SessionFlag[];

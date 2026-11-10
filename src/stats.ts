@@ -173,6 +173,8 @@ export function aggregate(sessions: SessionSummary[], by: GroupBy, opts: { fillG
           const r = get(tool);
           r.sessions += 1;
           r.toolCalls += n;
+          r.toolErrors += s.toolErrorCounts?.[tool] ?? 0;
+          r.durationMs += s.toolMs?.[tool] ?? 0; // for tools: time spent inside the tool
         }
         break;
     }
@@ -198,6 +200,8 @@ export interface Overview {
   linesRemoved: number;
   filesChanged: number;
   durationMs: number;
+  /** Time spent inside tools, summed over all calls (parallel calls count separately). */
+  toolMs: number;
   /** Share of prompt tokens served from cache (0..1). */
   cacheHitRate: number;
   costPerPrompt: number;
@@ -217,6 +221,7 @@ export function overview(sessions: SessionSummary[]): Overview {
   let linesRemoved = 0;
   let filesChanged = 0;
   let durationMs = 0;
+  let toolMs = 0;
   let uploaded = 0;
   let top: SessionSummary | null = null;
   for (const s of sessions) {
@@ -230,6 +235,7 @@ export function overview(sessions: SessionSummary[]): Overview {
     linesRemoved += s.linesRemoved;
     filesChanged += s.filesChanged;
     durationMs += activeDuration(s);
+    for (const ms of Object.values(s.toolMs ?? {})) toolMs += ms;
     if (s.flags.includes('log-uploaded')) uploaded++;
     if (!top || ownCost(s) > ownCost(top)) top = s;
   }
@@ -247,6 +253,7 @@ export function overview(sessions: SessionSummary[]): Overview {
     linesRemoved,
     filesChanged,
     durationMs,
+    toolMs,
     cacheHitRate: promptTokens ? usage.cacheRead / promptTokens : 0,
     costPerPrompt: prompts ? usd / prompts : 0,
     recordedShare: usd ? recordedUsd / usd : 0,

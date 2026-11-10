@@ -132,6 +132,9 @@ describe('cli', () => {
     const html = readFileSync(file, 'utf8');
     assert.match(html, /window\.__BLACKBOX__=/);
     assert.match(html, /Fix checkout rounding bug/);
+    assert.match(html, /Find rounding helpers/, 'the sub-agent session is embedded too');
+    const { out: lean } = await run('export', CLAUDE_ID.slice(0, 8), '-o', '-', '--no-subagents');
+    assert.doesNotMatch(lean, /Find rounding helpers/);
     assert.doesNotMatch(html, /src="app\.js"|href="style\.css"/, 'assets must be inlined');
     assert.doesNotMatch(html, /<script[^>]+src=|<link[^>]+href="https?:/i, 'an export must not load anything from the network');
   });

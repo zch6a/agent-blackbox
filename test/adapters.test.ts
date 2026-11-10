@@ -172,8 +172,8 @@ describe('Codex adapter', () => {
     assert.deepEqual(
       edits.map((e) => [e.path, e.op, e.added, e.removed]),
       [
-        ['src/routes.ts', 'modify', 2, 1],
-        ['src/health.test.ts', 'create', 1, 0],
+        ['/work/api/src/routes.ts', 'modify', 2, 1],
+        ['/work/api/src/health.test.ts', 'create', 1, 0],
       ],
     );
     assert.equal(s.filesChanged, 2);

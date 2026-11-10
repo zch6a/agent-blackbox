@@ -11,14 +11,25 @@ import { VERSION } from './version.ts';
 
 export type ExportFormat = 'html' | 'md' | 'json';
 
-/** A single self-contained HTML file: the full replay UI with the session embedded. Works offline. */
-export async function exportHtml(session: Session): Promise<string> {
+/**
+ * A single self-contained HTML file: the full replay UI with the session (and
+ * its sub-agents, which can be opened from the parent's tool calls) embedded.
+ * Works offline.
+ */
+export async function exportHtml(session: Session, children: Session[] = []): Promise<string> {
   const [html, css, js] = await Promise.all([
     readFile(uiFile('index.html'), 'utf8'),
     readFile(uiFile('style.css'), 'utf8'),
     readFile(uiFile('app.js'), 'utf8'),
   ]);
-  const boot = { mode: 'export', version: VERSION, pricesUpdated: PRICES_UPDATED, session: toPayload(session, 8000) };
+  // Sub-agents get a tighter output budget so a big family stays a shareable size.
+  const boot = {
+    mode: 'export',
+    version: VERSION,
+    pricesUpdated: PRICES_UPDATED,
+    session: toPayload(session, 8000),
+    children: children.map((c) => toPayload(c, 3000)),
+  };
   return html
     .replace('<link rel="stylesheet" href="style.css" />', () => `<style>${css}</style>`)
     .replace('<link rel="icon" href="favicon.svg" type="image/svg+xml" />', '')

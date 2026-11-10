@@ -13,7 +13,7 @@ import { printPaged } from './pager.ts';
 import { serve } from './server.ts';
 import { hasSqlite } from './sqlite.ts';
 import { aggregate, GROUPS, overview, type GroupBy } from './stats.ts';
-import { AGENT_LABELS, type AgentKind, type SessionSummary } from './types.ts';
+import { AGENT_LABELS, type AgentKind, type Session, type SessionSummary } from './types.ts';
 import { statSafe, tildify } from './util.ts';
 import { VERSION } from './version.ts';
 import { hasZstdSupport } from './zstd.ts';
@@ -47,7 +47,7 @@ ${c.bold('Common options')}
 ${c.bold('list')}       -n, --limit <n> (default 25)   --all   -q, --search <text>   --sort time|cost|tokens|tools   --subagents
 ${c.bold('show')}       --thinking   --full   --cost   --errors   --no-tools   --no-pager
 ${c.bold('stats')}      --by day|week|month|agent|model|project|tool (default agent)
-${c.bold('export')}     -o, --output <file|->   -f, --format html|md|json   --redact   --thinking   --outputs
+${c.bold('export')}     -o, --output <file|->   -f, --format html|md|json   --redact   --thinking   --outputs   --no-subagents
 ${c.bold('ui')}         --port <n> (default 4777)   --no-open
 
 ${c.bold('Examples')}
@@ -90,6 +90,7 @@ const OPTIONS = {
   'no-open': { type: 'boolean' },
   subagents: { type: 'boolean' },
   'no-pager': { type: 'boolean' },
+  'no-subagents': { type: 'boolean' },
   demo: { type: 'boolean' },
   help: { type: 'boolean', short: 'h' },
   version: { type: 'boolean', short: 'v' },
@@ -233,15 +234,27 @@ function slug(text: string): string {
 }
 
 async function cmdExport(v: Values, query: string | undefined): Promise<void> {
-  const ref = await resolveSession(query ?? 'last', catalogOptions(v));
-  let session = await loadSession(ref);
-  if (v.redact) session = redactSession(session);
+  const opts = catalogOptions(v);
+  const ref = await resolveSession(query ?? 'last', opts);
   const fromExt = v.output && v.output !== '-' ? extname(v.output).slice(1).toLowerCase() : '';
-  const format = (v.format ?? (fromExt === 'markdown' ? 'md' : fromExt) ?? 'html') || 'html';
+  const format = v.format ?? (fromExt === 'markdown' ? 'md' : fromExt || 'html');
   if (!['html', 'md', 'json'].includes(format)) throw new UsageError('--format must be html, md or json');
+  // Family links come from the list; an HTML export also carries the sub-agent sessions themselves.
+  const all = await listSessions({ ...opts, onProgress: undefined });
+  const withLinks = (s: Session): Session => {
+    const sum = all.find((x) => x.key === s.key);
+    return { ...s, ...(sum?.children ? { children: sum.children } : {}), ...(sum?.costInParent ? { costInParent: true } : {}) };
+  };
+  let session = withLinks(await loadSession(ref));
+  const childRefs = format === 'html' && !v['no-subagents'] ? (await discover(opts)).filter((r) => all.some((s) => s.key === r.key && s.parentKey === ref.key)) : [];
+  let children = await Promise.all(childRefs.map(async (r) => withLinks(await loadSession(r))));
+  if (v.redact) {
+    session = redactSession(session);
+    children = children.map((c) => redactSession(c));
+  }
   const body =
     format === 'html'
-      ? await exportHtml(session)
+      ? await exportHtml(session, children)
       : format === 'md'
         ? exportMarkdown(session, { thinking: !!v.thinking, outputs: !!v.outputs })
         : exportJson(session);
@@ -252,7 +265,7 @@ async function cmdExport(v: Values, query: string | undefined): Promise<void> {
   const file = resolve(v.output ?? `${slug(session.title)}-${session.id.slice(0, 8)}.${format as ExportFormat}`);
   await mkdir(dirname(file), { recursive: true });
   await writeFile(file, body);
-  console.log(`${c.green('✓')} Exported ${c.bold(session.title)} → ${file}`);
+  console.log(`${c.green('✓')} Exported ${c.bold(session.title)}${children.length ? c.dim(` with ${plural(children.length, 'sub-agent')}`) : ''} → ${file}`);
   if (!v.redact) console.log(c.dim('  Tip: add --redact to scrub API keys, tokens, e-mails and your home path before sharing.'));
   else console.log(c.dim('  Redaction is best-effort — skim the file before posting it publicly.'));
 }

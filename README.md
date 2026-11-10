@@ -41,10 +41,10 @@ Every coding agent already writes a detailed log to disk. They are just unreadab
 | 🧯 **Errors mode** | One key (`e`) shows only what failed — with the prompt that led to it. |
 | 📝 **Files** | Every file the agent touched, every diff, in order. |
 | ⑂ **Sub-agents** | Sessions spawned by another agent (Claude Code `Agent` tasks, Codex sub-agents, DeepSeek Harness and OpenCode child sessions) are linked to the exact tool call that started them, and their cost is never counted twice. |
-| 💸 **Costs you can trust** | Uses the cost the agent recorded itself when available. Estimates are always marked `~`. Duplicated usage lines are de-duplicated (a naive parser over-counts Claude Code tokens 2–3×). |
-| 📊 **Insights** | Daily spend, cost by agent / model / project, most-used tools, failure rates, cache hit rate, most expensive sessions. |
+| 💸 **Costs you can trust** | Uses the cost the agent recorded itself, estimates whatever it did not record, and always marks estimates `~`. Duplicated usage lines are de-duplicated (a naive parser over-counts Claude Code tokens 2–3×). See [Accuracy](#accuracy). |
+| 📊 **Insights** | Daily spend, cost by agent / model / project, where the time went (slowest tools), failure rates, cache hit rate, most expensive sessions. |
 | 🔒 **Privacy check** | Flags DeepSeek Harness sessions whose logs were uploaded to DeepSeek. |
-| 📦 **Shareable replays** | `blackbox export last --redact` writes one self-contained HTML file with API keys, tokens, e-mails and your home path scrubbed. |
+| 📦 **Shareable replays** | `blackbox export last --redact` writes one self-contained HTML file — sub-agents included — with API keys, tokens, e-mails and your home path scrubbed. |
 | ⌨️ **Terminal-first** | `list`, `show`, `stats`, `export`, `doctor` — with `--json` for scripts. |
 | ⚡ **Fast** | Logs are parsed on all CPU cores and summaries are cached. 1,041 real sessions (9.5 GB of logs, 111B tokens): about 17 s the first time, 0.3 s after that. |
 
@@ -60,6 +60,7 @@ No agent installed yet? `npx agent-blackbox demo` opens the UI on a set of ficti
 
 ```bash
 npx agent-blackbox            # open the web UI (http://127.0.0.1:4777)
+npx agent-blackbox demo       # …or look around with fictional sample sessions first
 ```
 
 Or install it:
@@ -76,10 +77,12 @@ Requires Node.js **22.15+** (it uses Node's built-in zstd and SQLite, so there i
 ```console
 $ blackbox list --since 7d --sort cost
 ID        AGENT   WHEN      TOOK     COST  TOKENS  TOOLS        TITLE                          PROJECT
-7f3a91c2  claude  2h ago    1h 12m  $18.40  41.2M    612  ✗9    Migrate billing to Stripe v3   payments
-0c19e5d4  codex   1d ago      38m  ~$6.12   9.8M    201  ✗2    Add OpenTelemetry tracing      api
-b6d2770e  deepseek 3d ago     51m  ~$0.31  12.4M    344  ↑ ✗1  整理笔记目录                   notes
+7f3a91c2  claude    2h ago   1h 12m  $18.40   41.2M    612  ⑂3 ✗9  Migrate billing to Stripe v3   payments
+0c19e5d4  codex     1d ago      38m  ~$6.12    9.8M    201  ✗2     Add OpenTelemetry tracing      api
+b6d2770e  deepseek  3d ago      51m  ~$0.31   12.4M    344  ↑ ✗1   整理笔记目录                   notes
 ```
+
+`⑂3` means the session spawned three sub-agents, `✗9` that nine tool calls failed, `↑` that the log was uploaded to DeepSeek, `~` that the cost is an estimate.
 
 | Command | What it does |
 |---|---|
@@ -87,8 +90,9 @@ b6d2770e  deepseek 3d ago     51m  ~$0.31  12.4M    344  ↑ ✗1  整理笔记�
 | `blackbox list` | Recent sessions. `--since 7d`, `--sort cost\|time\|tokens\|tools`, `-q <search>`, `-p <project>`, `-n 50`, `--all`, `--subagents`, `--json` |
 | `blackbox show <session>` | Replay a session in the terminal (long output goes through `$PAGER`). `--errors`, `--thinking`, `--cost`, `--full`, `--no-tools`, `--no-pager`, `--json` |
 | `blackbox stats` | Totals plus a breakdown `--by day\|week\|month\|agent\|model\|project\|tool` |
-| `blackbox export <session>` | `-o replay.html`, `-f html\|md\|json`, `--redact`, `-o -` for stdout |
+| `blackbox export <session>` | `-o replay.html`, `-f html\|md\|json`, `--redact`, `--no-subagents`, `-o -` for stdout |
 | `blackbox doctor` | Which agents were found, where, and whether your Node.js supports everything |
+| `blackbox demo` | The UI on fictional sample sessions. `--demo` works with every other command too |
 
 `<session>` is a unique id prefix (like a git hash), a full id, `last`, or `-2` for the second most recent.
 
@@ -138,7 +142,7 @@ See [SECURITY.md](SECURITY.md) to report a vulnerability.
 
 ## FAQ
 
-**Does it work while an agent is running?** Yes. Logs are read as they are on disk; the session list refreshes every 30 s (or press ↻), and unfinished turns are marked *live*.
+**Does it work while an agent is running?** Yes. The index refreshes in the background, unfinished turns are marked *live*, and when the session you are looking at grows you get a "New activity — update" button instead of a jumping page.
 
 **My agent keeps logs somewhere else.** Use `--root agent=path`, e.g. `blackbox --root claude=/mnt/old-laptop/.claude/projects`.
 

@@ -41,10 +41,10 @@ npx agent-blackbox
 | 🧯 **只看报错** | 按 `e` 只显示失败的部分，并附上引发它的那次提问。 |
 | 📝 **文件改动** | Agent 碰过的每个文件、每一处 diff，按时间顺序排列。 |
 | ⑂ **子 Agent** | 由其他 Agent 派生的会话（Claude Code 的 `Agent` 任务、Codex 子 Agent、DeepSeek Harness 和 OpenCode 的子会话）会关联到派发它的那次工具调用，费用绝不重复计算。 |
-| 💸 **可信的费用** | Agent 自己记录了费用就直接用；估算值一律标 `~`。重复的用量行会去重（不去重的话，Claude Code 的 token 会被多算 2–3 倍）。 |
-| 📊 **洞察** | 每日花费，按 Agent / 模型 / 项目拆分，最常用的工具、失败率、缓存命中率、最贵的会话。 |
+| 💸 **可信的费用** | 优先用 Agent 自己记录的费用，没记录到的部分再估算，估算值一律标 `~`。重复的用量行会去重（不去重的话，Claude Code 的 token 会被多算 2–3 倍）。详见[数字是怎么算的](#数字是怎么算的)。 |
+| 📊 **洞察** | 每日花费，按 Agent / 模型 / 项目拆分，时间都花在哪（最慢的工具）、失败率、缓存命中率、最贵的会话。 |
 | 🔒 **隐私检查** | 标出日志被上传到 DeepSeek 的 DeepSeek Harness 会话。 |
-| 📦 **可分享的回放** | `blackbox export last --redact` 生成一个自包含的 HTML 文件，API key、token、邮箱和你的用户目录都会被抹掉。 |
+| 📦 **可分享的回放** | `blackbox export last --redact` 生成一个自包含的 HTML 文件（连同子 Agent），API key、token、邮箱和你的用户目录都会被抹掉。 |
 | ⌨️ **终端优先** | `list`、`show`、`stats`、`export`、`doctor`，都支持 `--json`，方便写脚本。 |
 | ⚡ **快** | 用满所有 CPU 核心解析日志，会话摘要会缓存。实测 1041 个真实会话（9.5 GB 日志、1110 亿 token）：首次约 17 秒，之后 0.3 秒。 |
 
@@ -60,6 +60,7 @@ npx agent-blackbox
 
 ```bash
 npx agent-blackbox            # 打开网页界面 (http://127.0.0.1:4777)
+npx agent-blackbox demo       # 或者先用虚构的示例会话看看
 ```
 
 或者全局安装：
@@ -79,8 +80,11 @@ blackbox                      # 等同于 `blackbox ui`
 | `blackbox list` | 最近的会话。`--since 7d`、`--sort cost\|time\|tokens\|tools`、`-q <搜索>`、`-p <项目>`、`-n 50`、`--all`、`--subagents`、`--json` |
 | `blackbox show <会话>` | 在终端里回放会话（输出较长时走 `$PAGER` 分页）。`--errors`、`--thinking`、`--cost`、`--full`、`--no-tools`、`--no-pager`、`--json` |
 | `blackbox stats` | 总计，以及 `--by day\|week\|month\|agent\|model\|project\|tool` 的拆分 |
-| `blackbox export <会话>` | `-o replay.html`、`-f html\|md\|json`、`--redact`，`-o -` 输出到标准输出 |
+| `blackbox export <会话>` | `-o replay.html`、`-f html\|md\|json`、`--redact`、`--no-subagents`，`-o -` 输出到标准输出 |
 | `blackbox doctor` | 找到了哪些 Agent、在哪里，以及你的 Node.js 是否支持全部功能 |
+| `blackbox demo` | 用虚构的示例会话打开界面。其他命令也都可以加 `--demo` |
+
+列表里 `⑂3` 表示这个会话派生了 3 个子 Agent，`✗9` 表示 9 次工具调用失败，`↑` 表示日志被上传到了 DeepSeek，`~` 表示费用是估算值。
 
 `<会话>` 可以是唯一的 id 前缀（像 git 的哈希一样）、完整 id、`last`，或者 `-2` 表示倒数第二个。
 
@@ -130,7 +134,7 @@ blackbox                      # 等同于 `blackbox ui`
 
 ## 常见问题
 
-**Agent 还在运行时能用吗？** 可以。日志按磁盘上的现状读取，会话列表每 30 秒自动刷新（也可以点 ↻），没跑完的回合会标为 *live*。
+**Agent 还在运行时能用吗？** 可以。索引会在后台持续刷新，没跑完的回合会标为 *live*；你正在看的会话有新进展时，会出现“有新活动 · 更新”按钮，页面不会突然跳动。
 
 **我的 Agent 日志在别的地方。** 用 `--root agent=路径`，例如 `blackbox --root claude=/mnt/old-laptop/.claude/projects`。
 

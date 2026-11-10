@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [0.3.0] — 2026-11-10
+
+### Added
+
+- HTML exports include the session's sub-agents and work as a small offline site (`--no-subagents` to skip).
+- Insights: "Where the time went" — total and average time per tool, with failure rates; `stats --by tool` shows them too.
+
+### Changed
+
+- Relative edit paths (Codex `apply_patch`) are resolved against the session's working directory.
+- README: `demo` command, a legend for list markers, live-update FAQ.
+
 ## [0.2.1] — 2026-11-10
 
 ### Added

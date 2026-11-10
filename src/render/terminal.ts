@@ -238,10 +238,29 @@ export function renderStats(sessions: SessionSummary[], by: GroupBy): string {
     const max = Math.max(...rows.map((r) => r.toolCalls), 1);
     out.push(
       table(
-        [{ header: 'TOOL', flex: true }, { header: 'CALLS', align: 'right' }, { header: 'SESSIONS', align: 'right' }, { header: '' }],
-        rows.slice(0, 40).map((r) => [r.key, String(r.toolCalls), String(r.sessions), c.magenta(bar(r.toolCalls, max, 30))]),
+        [
+          { header: 'TOOL', flex: true },
+          { header: 'CALLS', align: 'right' },
+          { header: 'FAILED', align: 'right' },
+          { header: 'TIME', align: 'right' },
+          { header: 'AVG', align: 'right' },
+          { header: 'SESSIONS', align: 'right' },
+          { header: '' },
+        ],
+        rows
+          .slice(0, 40)
+          .map((r) => [
+            r.key,
+            String(r.toolCalls),
+            r.toolErrors ? c.red(`${r.toolErrors} (${((r.toolErrors / r.toolCalls) * 100).toFixed(0)}%)`) : c.dim('—'),
+            duration(r.durationMs),
+            r.durationMs ? duration(r.durationMs / r.toolCalls) : '—',
+            String(r.sessions),
+            c.magenta(bar(r.toolCalls, max, 24)),
+          ]),
       ),
     );
+    if (o.toolMs) out.push(c.dim(`\nTools ran for ${duration(o.toolMs)} in total (parallel calls count separately) over ${duration(o.durationMs)} of active time.`));
     return out.join('\n');
   }
   const max = Math.max(...rows.map((r) => r.usd), 0.0001);

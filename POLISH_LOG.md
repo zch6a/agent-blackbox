@@ -49,10 +49,21 @@ The big finding of this round was a **cost bug**: Claude Code's `cost-state` is 
 
 66 tests passing.
 
-## Round 4 — backlog
+## Round 4 — v0.3.0 (2026-11-10)
 
-- [ ] Export: include sub-agent sessions in an exported HTML replay (currently the parent only).
-- [ ] Insights: a "where the time went" view — slowest tools and longest waits.
-- [ ] Windows paths in `show` for Codex `apply_patch` (relative paths: resolve against cwd for display).
-- [ ] Re-read README end to end as a first-time visitor; trim.
-- [ ] Fresh-install test: `npm pack` and run the tarball in an empty directory.
+- **Fresh install:** `npm pack` → 96 KB tarball, 37 files (dist, ui, READMEs, LICENSE — no tests or docs). Installed it into an empty directory and ran `--version`, `doctor`, `list --demo`, `export`, the UI server (page, token, `app.js`) and the worker pool from the compiled `dist/` (forced with `BLACKBOX_WORKER_MIN_BYTES=0`). All worked.
+  - Publishing prerequisite: README images use relative `docs/…` paths, which npm only resolves when `package.json` has a `repository`. Add it once the GitHub repo exists.
+- **Edit paths:** Codex `apply_patch` records paths relative to the working directory; they are now resolved against `cwd` (keeping its separator style), so a file has one name across agents and in the Files tab.
+- **Export with sub-agents:** HTML exports embed the parent's sub-agent sessions (smaller output budget each); the offline file routes between them by hash, so `⑂` links, the Sub-agents tab and the "spawned by" link all work from `file://`. `--no-subagents` to leave them out. Verified with headless Chrome opening the exported file at the child's URL.
+- **Insights — where the time went:** summaries now carry time and failures per tool; Insights has a slowest-tools table (total, average, calls, failure rate) and states how much of the active time was tool time. `stats --by tool` shows FAILED, TIME and AVG. On real data: shell tools account for ~45 days of runtime (long builds and tests), edits average under 300 ms.
+- **README:** reread as a newcomer. Added the missing `demo` row, a legend for `⑂ ✗ ↑ ~`, `demo` in Quick start, sub-agents in export, time insights, the live-update behaviour in the FAQ, and a pointer from the cost feature to the Accuracy section.
+- Small: a sub-agent's cost card no longer shows `~<$0.01`, and its Prompts card says "task from the parent".
+
+67 tests passing.
+
+## Round 5 — backlog
+
+- [ ] Full read-through of `ui/app.js` (1,500 lines): split obvious sections, remove duplication, check every `innerHTML` for escaping.
+- [ ] Security: fuzz the Markdown renderer and `esc()` with hostile session content (HTML, `javascript:` links, giant lines).
+- [ ] Error paths: unreadable log file, permission denied, a log deleted while the UI is open.
+- [ ] Final screenshots and GIF refresh; final CHANGELOG pass.

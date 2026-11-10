@@ -257,7 +257,12 @@
     const h = location.hash || '#/';
     const m = /^#\/s\/(.+)$/.exec(h);
     $$('#nav a').forEach((a) => a.classList.toggle('on', (a.dataset.view === 'insights') === h.startsWith('#/insights')));
-    if (!LIVE) return openSession(null, BOOT.session);
+    if (!LIVE) {
+      // An exported file carries the session and its sub-agents; the hash picks which one is shown.
+      const wanted = m ? decodeURIComponent(m[1]) : '';
+      const pick = S.sessions.find((x) => x.key === wanted) || BOOT.session;
+      return openSession(null, pick);
+    }
     if (!m) document.title = 'agent-blackbox';
     if (h.startsWith('#/insights')) {
       S.view = 'insights';
@@ -502,13 +507,13 @@
       if (S.key !== key) return; // user moved on
     }
     // Family links are computed across sessions, so they come from the list, not the session payload.
-    const sum = LIVE ? summaryOf(S.key) : null;
+    const sum = summaryOf(S.key);
     if (sum) {
       preloaded.children = sum.children;
       preloaded.costInParent = sum.costInParent;
     }
     S.data = prepare(preloaded);
-    S.data._kids = LIVE ? childrenOf(S.key) : [];
+    S.data._kids = childrenOf(S.key);
     S.data._kidByTool = new Map(S.data._kids.filter((k) => k.parentToolId).map((k) => [k.parentToolId, k]));
     document.title = S.data.title + ' · agent-blackbox';
     renderDetail();
@@ -575,7 +580,7 @@
       notices.push(`<div class="notice danger">↑ <span><b>This session's log was uploaded to the DeepSeek API.</b> DeepSeek Harness enables session-log delivery by default on the official API; you can turn it off in its Settings.</span></div>`);
     if (s.flags.includes('incomplete')) notices.push(`<div class="notice warn">… <span>The log ends mid-turn — the agent is still running, was interrupted, or crashed.</span></div>`);
     if (s.parentKey) {
-      const parent = LIVE ? summaryOf(s.parentKey) : null;
+      const parent = summaryOf(s.parentKey);
       const link = parent ? `<a href="#/s/${encodeURIComponent(parent.key)}">${esc(parent.title)}</a>` : `<span class="mono">${esc(s.parentKey.slice(s.parentKey.indexOf(':') + 1))}</span>`;
       notices.push(
         `<div class="notice info">↳ <span>Sub-agent${s.agentName ? ` <b>${esc(s.agentName)}</b>` : ''} spawned by ${link}.${s.costInParent ? ' Its cost is already included in the parent’s recorded cost.' : ''}</span></div>`,
@@ -602,14 +607,14 @@
       <div class="kpis">
         ${
           s.costInParent
-            ? kpi('Cost', '<span class="hint">in parent</span>', `~${money(s.cost.usd)} est.`, 'Included in the parent session’s recorded cost')
+            ? kpi('Cost', '<span class="hint">in parent</span>', `${s.cost.usd < 0.01 ? '' : '~'}${money(s.cost.usd)} on its own`, 'Included in the parent session’s recorded cost')
             : famUsd > ownCost(s) + 0.005
               ? kpi('Cost', familyLabel(s), `${costLabel(s.cost)} here + ${kids.length} sub-agent${kids.length > 1 ? 's' : ''}`, costTip + ' — plus sub-agents not included in it')
               : kpi('Cost', costLabel(s.cost), s.cost.source + (kids.length ? ` · +${kids.length} sub-agent${kids.length > 1 ? 's' : ''}` : ''), costTip + (kids.length ? ', including its sub-agents' : ''))
         }
         ${kpi('Tokens', tok(totalTokens(u)), promptTok ? cachePct + '% cache hits' : '', `input ${num(u.input)} · output ${num(u.output)} · cache read ${num(u.cacheRead)} · cache write ${num(u.cacheWrite)}`)}
         ${kpi('Active time', dur(activeMs(s)), 'over ' + dur(wall), 'Idle gaps longer than 5 minutes are not counted')}
-        ${kpi('Prompts', num(s.prompts), s.prompts ? money(s.cost.usd / s.prompts) + ' / prompt' : '')}
+        ${kpi('Prompts', num(s.prompts), s.prompts ? money(s.cost.usd / s.prompts) + ' / prompt' : s.parentKey ? 'task from the parent' : '')}
         ${kpi('Tool calls', num(s.toolCalls), s.toolErrors ? `<span style="color:var(--err)">${s.toolErrors} failed</span>` : 'no failures')}
         ${kpi('Files changed', num(s.filesChanged), `<span style="color:var(--add)">+${num(s.linesAdded)}</span> <span style="color:var(--del)">−${num(s.linesRemoved)}</span>`)}
       </div>
@@ -1305,6 +1310,8 @@
     }
   }
 
+  const failRate = (r) => (r.toolErrors ? `<span style="color:var(--err)">${num(r.toolErrors)} · ${((r.toolErrors / Math.max(1, r.toolCalls)) * 100).toFixed(r.toolErrors / r.toolCalls < 0.1 ? 1 : 0)}%</span>` : '—');
+
   function breakdown(rows, opts) {
     const max = Math.max(...rows.map((r) => r[opts.metric] || 0), 1e-9);
     return `<div class="panel"><table><tr><th>${opts.title}</th>${opts.cols.map((c) => `<th class="num">${c[0]}</th>`).join('')}<th style="width:30%"></th></tr>
@@ -1351,8 +1358,14 @@
         <div><h2>By agent</h2>${breakdown(st.groups.agent, { title: 'Agent', metric: 'usd', cols: [['Sessions', (r) => num(r.sessions)], ['Cost', (r) => money(r.usd)], ['Tokens', (r) => tok(r.tokens)]] })}</div>
         <div><h2>By model</h2>${breakdown(st.groups.model, { title: 'Model', mono: true, metric: 'usd', cols: [['Sessions', (r) => num(r.sessions)], ['Cost', (r) => money(r.usd)], ['Tokens', (r) => tok(r.tokens)]] })}</div>
         <div><h2>By project</h2>${breakdown(st.groups.project, { title: 'Project', metric: 'usd', cols: [['Sessions', (r) => num(r.sessions)], ['Cost', (r) => money(r.usd)], ['Active', (r) => dur(r.durationMs)]] })}</div>
-        <div><h2>Most used tools</h2>${breakdown(st.groups.tool, { title: 'Tool', mono: true, metric: 'toolCalls', bar: 'tool', limit: 15, cols: [['Calls', (r) => num(r.toolCalls)], ['Sessions', (r) => num(r.sessions)]] })}</div>
+        <div><h2>Most used tools</h2>${breakdown(st.groups.tool, { title: 'Tool', mono: true, metric: 'toolCalls', bar: 'tool', limit: 10, cols: [['Calls', (r) => num(r.toolCalls)], ['Failed', (r) => failRate(r)], ['Sessions', (r) => num(r.sessions)]] })}</div>
       </div>
+      <h2>Where the time went</h2>
+      <p class="hint" style="margin-top:-4px">${o.toolMs ? `Tools ran for ${dur(o.toolMs)} in total over ${dur(o.durationMs)} of active time (parallel calls count separately). The rest is the model thinking and you reading and typing.` : 'No tool timings in this range.'}</p>
+      ${breakdown(
+        [...st.groups.tool].filter((r) => r.durationMs > 0).sort((a, b) => b.durationMs - a.durationMs),
+        { title: 'Tool', mono: true, metric: 'durationMs', bar: 'tool', limit: 12, cols: [['Total time', (r) => dur(r.durationMs)], ['Avg / call', (r) => (r.toolCalls ? dur(r.durationMs / r.toolCalls) : '—')], ['Calls', (r) => num(r.toolCalls)], ['Failed', (r) => failRate(r)]] },
+      )}
       <h2>Most expensive sessions</h2>
       <div class="panel"><table><tr><th>Session</th><th>Agent</th><th class="num">When</th><th class="num">Tools</th><th class="num">Cost</th></tr>
         ${st.top
@@ -1490,6 +1503,8 @@
     loadSessions(false);
     setInterval(backgroundRefresh, 30_000);
   } else {
+    S.sessions = [BOOT.session, ...(BOOT.children || [])];
+    S.loaded = true;
     route();
   }
 })();

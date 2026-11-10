@@ -53,6 +53,22 @@ export function countImages(content: unknown): number {
   return n;
 }
 
+/**
+ * Some agents record edit paths relative to the working directory (Codex
+ * `apply_patch`), others absolute. Resolve relative ones so the same file
+ * always shows up under one name. Keeps the separator style of `cwd`.
+ */
+export function absolutePath(path: string, cwd: string): string {
+  if (!path || !cwd) return path;
+  if (/^(?:[a-zA-Z]:[\\/]|[\\/]|~[\\/]|\\\\)/.test(path)) return path;
+  const sep = cwd.includes('\\') && !cwd.includes('/') ? '\\' : '/';
+  const rel = path.replace(/^\.[\\/]/, '').replace(/[\\/]/g, sep);
+  return cwd.replace(/[\\/]+$/, '') + sep + rel;
+}
+
+/** A single tool call longer than this is almost certainly a paused session, not work. */
+export const MAX_TOOL_MS = 2 * 3600_000;
+
 /** Gaps longer than this between two events are treated as the human being away. */
 export const IDLE_GAP_MS = 5 * 60_000;
 
@@ -204,6 +220,8 @@ export class SessionBuilder {
     let linesRemoved = 0;
     const files = new Set<string>();
     const toolCounts: Record<string, number> = {};
+    const toolMs: Record<string, number> = {};
+    const toolErrorCounts: Record<string, number> = {};
     const modelUsage: Record<string, { usd: number; tokens: number }> = {};
     let firstPrompt = '';
 
@@ -216,8 +234,14 @@ export class SessionBuilder {
         case 'tool':
           toolCalls++;
           toolCounts[ev.name] = (toolCounts[ev.name] ?? 0) + 1;
-          if (ev.isError) toolErrors++;
+          // Results that arrive hours later (a session resumed the next day) are not tool time.
+          if (ev.endT && ev.endT > ev.t) toolMs[ev.name] = (toolMs[ev.name] ?? 0) + Math.min(ev.endT - ev.t, MAX_TOOL_MS);
+          if (ev.isError) {
+            toolErrors++;
+            toolErrorCounts[ev.name] = (toolErrorCounts[ev.name] ?? 0) + 1;
+          }
           for (const e of ev.edits ?? []) {
+            e.path = absolutePath(e.path, this.cwd);
             files.add(e.path);
             linesAdded += e.added;
             linesRemoved += e.removed;
@@ -271,6 +295,8 @@ export class SessionBuilder {
       usage,
       cost,
       toolCounts,
+      toolMs,
+      toolErrorCounts,
       modelUsage,
       flags: [...this.flags],
       sizeBytes: ref.sizeBytes,
