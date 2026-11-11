@@ -21,7 +21,9 @@
   // A URL in already-escaped text: http(s), a host that starts with a letter or digit,
   // and it ends at whitespace, ")" or any escaped < > " ' (so `https://x"onclick=…` cannot grow an attribute).
   const URL_RE = 'https?:\\/\\/[A-Za-z0-9](?:(?!&lt;|&gt;|&quot;|&#39;)[^\\s<>")])*';
-  const LINK = new RegExp('\\[([^\\]\\n]+)\\]\\((' + URL_RE + ')\\)', 'g');
+  // The label excludes [ as well as ]: otherwise every [ in a run like [[[[...] scans to the end and back,
+  // which is quadratic (4 s for 50,000 brackets on a CI runner).
+  const LINK = new RegExp('\\[([^\\[\\]\\n]+)\\]\\((' + URL_RE + ')\\)', 'g');
   const AUTOLINK = new RegExp('(^|[\\s(])(' + URL_RE + ')', 'g');
 
   // `s` is already escaped, so the only markup in it is what we add here.
