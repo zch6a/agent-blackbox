@@ -2,6 +2,14 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [1.0.1] — 2026-11-12
+
+### Fixed
+
+- The Markdown renderer took time quadratic in a run of `[` characters (about 4 s for 50,000 on a CI
+  runner), so a session log containing such a run could freeze the viewer. Link labels now stop at `[`
+  as well as `]`, and the same input takes under a millisecond.
+
 ## [1.0.0] — 2026-11-10
 
 ### Security
