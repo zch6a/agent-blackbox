@@ -1,18 +1,24 @@
 <div align="center">
 
-# ◉ agent-blackbox
+<img src="assets/banner.svg" alt="agent-blackbox — A flight recorder for AI coding agents." width="100%">
 
-**A flight recorder for AI coding agents.**
+<p>
+<a href="https://github.com/zch6a/agent-blackbox/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/zch6a/agent-blackbox/actions/workflows/ci.yml/badge.svg"></a>
+<img alt="Node 22.15" src="https://img.shields.io/badge/node-%E2%89%A522.15-339933?logo=nodedotjs&logoColor=white">
+<img alt="Zero dependencies" src="https://img.shields.io/badge/dependencies-0-2ea44f">
+<img alt="Local only" src="https://img.shields.io/badge/data-stays%20local-555">
+<a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-blue"></a>
+</p>
+
+**English** · [简体中文](README.zh-CN.md)
 
 Replay every **Claude Code**, **Codex**, **OpenCode** and **DeepSeek Harness** session —
 prompts, tool calls, diffs, errors, tokens and dollars — in one local UI.
 
 Zero dependencies · Nothing leaves your machine · Works offline
 
-[English](README.md) · [简体中文](README.zh-CN.md)
-
 ```bash
-npx agent-blackbox
+npx github:zch6a/agent-blackbox
 ```
 
 <img src="docs/screenshot-session.png" alt="A session replayed in agent-blackbox: cost, tokens, active time, a flight-path chart and the full timeline of prompts, tool calls and diffs" width="900" />
@@ -54,19 +60,19 @@ Every coding agent already writes a detailed log to disk. They are just unreadab
 
 <img src="docs/replay.gif" alt="Replaying a session: events appear one by one while the replay bar shows the clock, progress and running cost" width="900" />
 
-No agent installed yet? `npx agent-blackbox demo` opens the UI on a set of fictional sessions (the screenshots above are from it).
+No agent installed yet? `npx github:zch6a/agent-blackbox demo` opens the UI on a set of fictional sessions (the screenshots above are from it).
 
 ## Quick start
 
 ```bash
-npx agent-blackbox            # open the web UI (http://127.0.0.1:4777)
-npx agent-blackbox demo       # …or look around with fictional sample sessions first
+npx github:zch6a/agent-blackbox            # open the web UI (http://127.0.0.1:4777)
+npx github:zch6a/agent-blackbox demo       # …or look around with fictional sample sessions first
 ```
 
 Or install it:
 
 ```bash
-npm i -g agent-blackbox
+npm i -g github:zch6a/agent-blackbox
 blackbox                      # same as `blackbox ui`
 ```
 

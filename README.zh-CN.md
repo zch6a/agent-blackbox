@@ -1,18 +1,24 @@
 <div align="center">
 
-# ◉ agent-blackbox
+<img src="assets/banner.zh-CN.svg" alt="agent-blackbox — AI 编程 Agent 的“黑匣子”。" width="100%">
 
-**AI 编程 Agent 的“黑匣子”。**
+<p>
+<a href="https://github.com/zch6a/agent-blackbox/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/zch6a/agent-blackbox/actions/workflows/ci.yml/badge.svg"></a>
+<img alt="Node 22.15" src="https://img.shields.io/badge/node-%E2%89%A522.15-339933?logo=nodedotjs&logoColor=white">
+<img alt="Zero dependencies" src="https://img.shields.io/badge/dependencies-0-2ea44f">
+<img alt="Local only" src="https://img.shields.io/badge/data-stays%20local-555">
+<a href="LICENSE"><img alt="MIT license" src="https://img.shields.io/badge/license-MIT-blue"></a>
+</p>
+
+[English](README.md) · **简体中文**
 
 把 **Claude Code**、**Codex**、**OpenCode**、**DeepSeek Harness** 的每一次会话——
 提问、工具调用、代码改动、报错、token 和花费——放进同一个本地界面里回放。
 
 零依赖 · 数据不出本机 · 可离线使用
 
-[English](README.md) · [简体中文](README.zh-CN.md)
-
 ```bash
-npx agent-blackbox
+npx github:zch6a/agent-blackbox
 ```
 
 <img src="docs/screenshot-session.png" alt="agent-blackbox 回放一个会话：费用、token、活跃时长、飞行轨迹图，以及完整的提问、工具调用和代码改动时间线" width="900" />
@@ -54,19 +60,19 @@ npx agent-blackbox
 
 <img src="docs/replay.gif" alt="回放会话：事件逐条出现，回放条显示时间、进度和累计费用" width="900" />
 
-还没装任何 Agent？`npx agent-blackbox demo` 会用一组虚构的示例会话打开界面（上面的截图就来自它）。
+还没装任何 Agent？`npx github:zch6a/agent-blackbox demo` 会用一组虚构的示例会话打开界面（上面的截图就来自它）。
 
 ## 快速开始
 
 ```bash
-npx agent-blackbox            # 打开网页界面 (http://127.0.0.1:4777)
-npx agent-blackbox demo       # 或者先用虚构的示例会话看看
+npx github:zch6a/agent-blackbox            # 打开网页界面 (http://127.0.0.1:4777)
+npx github:zch6a/agent-blackbox demo       # 或者先用虚构的示例会话看看
 ```
 
 或者全局安装：
 
 ```bash
-npm i -g agent-blackbox
+npm i -g github:zch6a/agent-blackbox
 blackbox                      # 等同于 `blackbox ui`
 ```
 

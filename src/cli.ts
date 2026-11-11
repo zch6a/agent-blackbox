@@ -51,7 +51,7 @@ ${c.bold('export')}     -o, --output <file|->   -f, --format html|md|json   --re
 ${c.bold('ui')}         --port <n> (default 4777)   --no-open
 
 ${c.bold('Examples')}
-  npx agent-blackbox                       open the UI
+  agent-blackbox                           open the UI
   blackbox list --since 7d --sort cost     the week's most expensive sessions
   blackbox show last --errors              only what went wrong in the last session
   blackbox stats --by day --since 30d      daily spend for the past month

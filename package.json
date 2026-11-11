@@ -16,6 +16,14 @@
     "cli"
   ],
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zch6a/agent-blackbox.git"
+  },
+  "homepage": "https://github.com/zch6a/agent-blackbox#readme",
+  "bugs": {
+    "url": "https://github.com/zch6a/agent-blackbox/issues"
+  },
   "type": "module",
   "bin": {
     "blackbox": "dist/bin.js",
@@ -33,6 +41,7 @@
   },
   "scripts": {
     "build": "tsc -p tsconfig.json",
+    "prepare": "npm run build",
     "dev": "node src/bin.ts",
     "test": "node --test --test-reporter=spec \"test/**/*.test.ts\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
