@@ -2,9 +2,10 @@ import type { Adapter, AgentKind } from '../types.ts';
 import { claudeAdapter } from './claude.ts';
 import { codexAdapter } from './codex.ts';
 import { deepseekAdapter } from './deepseek.ts';
+import { geminiAdapter } from './gemini.ts';
 import { opencodeAdapter } from './opencode.ts';
 
-export const ADAPTERS: readonly Adapter[] = [claudeAdapter, codexAdapter, opencodeAdapter, deepseekAdapter];
+export const ADAPTERS: readonly Adapter[] = [claudeAdapter, codexAdapter, opencodeAdapter, deepseekAdapter, geminiAdapter];
 
 export function adapterFor(agent: AgentKind): Adapter {
   const a = ADAPTERS.find((x) => x.agent === agent);
@@ -19,5 +20,6 @@ export function parseAgent(name: string): AgentKind | null {
   if (['codex', 'openai', 'codex-cli'].includes(n)) return 'codex';
   if (['opencode', 'oc'].includes(n)) return 'opencode';
   if (['deepseek', 'deepseek-harness', 'dsh', 'ds'].includes(n)) return 'deepseek-harness';
+  if (['gemini', 'gemini-cli', 'google'].includes(n)) return 'gemini-cli';
   return null;
 }

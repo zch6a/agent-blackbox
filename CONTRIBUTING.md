@@ -36,10 +36,16 @@ test/            synthetic fixtures for every agent; never real user logs
 
 1. Create `src/adapters/<agent>.ts` exporting an `Adapter`:
    - `defaultRoots()` — where the agent stores logs on each OS (respect its env vars).
-   - `discover(roots)` — return a `SessionRef` per session. Keep it cheap: list files, `stat` them, do not parse.
+   - `discover(roots)` — return a `SessionRef` per session. Keep it cheap: list files, `stat` them, do not parse them
+     (reading the first few KB for an id is fine, as the Gemini CLI adapter does).
    - `load(ref)` — parse into a `Session` with `SessionBuilder`. Call `b.user()`, `b.assistant()`, `b.tool()` / `b.result()`, `b.usage()`, and set `b.recordedCostUsd` if the agent logs its own cost.
 2. Add it to `ADAPTERS` and `parseAgent()` in `src/adapters/index.ts`, and a label in `AGENT_LABELS`.
-3. Add a synthetic fixture to `test/helpers.ts` and tests to `test/adapters.test.ts`. **Never commit real session logs** — they contain code, secrets and personal data.
+3. Add a synthetic fixture to `test/helpers.ts` (a root for the agent in `catalogRoots` and `rootArgs`: a test fails
+   if one is missing) and tests to `test/adapters.test.ts`, or a file of its own like `test/gemini.test.ts`. A demo
+   session in `src/demo.ts`, in the agent's own format, goes last in the list so the others stay the same.
+   **Never commit real session logs** — they contain code, secrets and personal data. Tests run with the home folder
+   and every agent's folder variable pointed at an empty temp folder (`test/isolate.ts`), so a missing root finds
+   nothing instead of your own sessions.
 4. Document the location in both READMEs.
 
 Things every adapter must get right:
@@ -55,6 +61,7 @@ Everything in `docs/` is generated from the fictional demo data, never from real
 
 ```bash
 node src/bin.ts demo --port 4778 --no-open   # terminal 1
+node scripts/screenshots.mjs                     # terminal 2: docs/screenshot-*.png (needs Chrome)
 node scripts/record-replay.mjs docs/replay.gif   # terminal 2 (needs Chrome and ffmpeg)
 ```
 

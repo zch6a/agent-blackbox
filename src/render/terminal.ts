@@ -9,6 +9,7 @@ const AGENT_SHORT: Record<string, string> = {
   codex: 'codex',
   opencode: 'opencode',
   'deepseek-harness': 'deepseek',
+  'gemini-cli': 'gemini',
 };
 
 const AGENT_COLOR: Record<string, (s: string) => string> = {
@@ -16,6 +17,7 @@ const AGENT_COLOR: Record<string, (s: string) => string> = {
   codex: c.cyan,
   opencode: c.magenta,
   'deepseek-harness': c.blue,
+  'gemini-cli': c.green,
 };
 
 export function costLabel(cost: Cost): string {

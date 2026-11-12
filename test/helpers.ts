@@ -2,6 +2,7 @@
  * Synthetic fixtures for every supported agent, written to a temp directory.
  * Nothing here comes from a real user's machine.
  */
+import './isolate.ts';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -14,7 +15,7 @@ const jsonl = (rows: unknown[]) => rows.map((r) => JSON.stringify(r)).join('\n')
 
 export interface Fixture {
   dir: string;
-  roots: { claude: string; codex: string; opencode: string; deepseek: string };
+  roots: { claude: string; codex: string; opencode: string; deepseek: string; gemini: string };
   cacheDir: string;
   cleanup: () => void;
 }
@@ -200,6 +201,9 @@ export function makeFixture(): Fixture {
   const codex = join(dir, 'codex', 'sessions');
   const opencode = join(dir, 'opencode');
   const deepseek = join(dir, 'dsh', 'sessions');
+  // No Gemini CLI session in the shared fixture (test/gemini.test.ts has its own): an empty root, never the default.
+  const gemini = join(dir, 'gemini', 'tmp');
+  mkdirSync(gemini, { recursive: true });
   mkdirSync(join(claude, '-work-shop'), { recursive: true });
   writeFileSync(join(claude, '-work-shop', `${CLAUDE_ID}.jsonl`), jsonl(claudeLines()));
   const subDir = join(claude, '-work-shop', CLAUDE_ID, 'subagents');
@@ -217,14 +221,14 @@ export function makeFixture(): Fixture {
   const cacheDir = join(dir, 'cache');
   return {
     dir,
-    roots: { claude, codex, opencode, deepseek },
+    roots: { claude, codex, opencode, deepseek, gemini },
     cacheDir,
     cleanup: () => rmSync(dir, { recursive: true, force: true }),
   };
 }
 
 export function rootArgs(f: Fixture): string[] {
-  return ['--root', `claude=${f.roots.claude}`, '--root', `codex=${f.roots.codex}`, '--root', `opencode=${f.roots.opencode}`, '--root', `deepseek=${f.roots.deepseek}`];
+  return ['--root', `claude=${f.roots.claude}`, '--root', `codex=${f.roots.codex}`, '--root', `opencode=${f.roots.opencode}`, '--root', `deepseek=${f.roots.deepseek}`, '--root', `gemini=${f.roots.gemini}`];
 }
 
 export function catalogRoots(f: Fixture) {
@@ -233,6 +237,7 @@ export function catalogRoots(f: Fixture) {
     codex: [f.roots.codex],
     opencode: [f.roots.opencode],
     'deepseek-harness': [f.roots.deepseek],
+    'gemini-cli': [f.roots.gemini],
   };
 }
 

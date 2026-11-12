@@ -10,11 +10,11 @@ const dir = mkdtempSync(join(tmpdir(), 'bb-demo-'));
 after(() => rmSync(dir, { recursive: true, force: true }));
 
 describe('demo data', () => {
-  it('goes through the real parsers for all four agents', async () => {
+  it('goes through the real parsers for all five agents', async () => {
     const demo = writeDemo(join(dir, 'demo'), Date.parse('2026-11-10T12:00:00Z'));
     const all = await listSessions({ roots: demo.roots, cache: false });
     const list = all.filter((s) => !s.parentKey);
-    assert.equal(list.length, 8);
+    assert.equal(list.length, 9);
     const subs = all.filter((s) => s.parentKey);
     assert.equal(subs.length, 1, 'the Stripe session delegates to one sub-agent');
     assert.equal(subs[0]!.agentName, 'Explore');
@@ -22,7 +22,7 @@ describe('demo data', () => {
     assert.equal(list.find((s) => s.key === subs[0]!.parentKey)?.children, 1);
     const byAgent = new Map<string, number>();
     for (const s of list) byAgent.set(s.agent, (byAgent.get(s.agent) ?? 0) + 1);
-    assert.deepEqual(Object.fromEntries(byAgent), { 'claude-code': 3, codex: 2, 'deepseek-harness': 2, opencode: 1 });
+    assert.deepEqual(Object.fromEntries(byAgent), { 'claude-code': 3, codex: 2, 'deepseek-harness': 2, opencode: 1, 'gemini-cli': 1 });
     for (const s of list) {
       assert.ok(s.toolCalls > 0, `${s.title} has tool calls`);
       assert.ok(s.prompts > 0, `${s.title} has prompts`);
@@ -35,6 +35,14 @@ describe('demo data', () => {
     assert.ok(list.filter((s) => s.agent === 'claude-code').every((s) => s.cost.source === 'recorded'));
     const stripe = list.find((s) => s.title.startsWith('Migrate billing'));
     assert.ok(stripe && stripe.toolErrors === 2 && stripe.filesChanged >= 6);
+    // Gemini CLI: the title from a $set line, the project from .project_root, the rewound prompt gone,
+    // a shell call written twice counted once, edits from Gemini's own diffs.
+    const gemini = list.find((s) => s.agent === 'gemini-cli');
+    assert.ok(gemini);
+    assert.equal(gemini.title, 'Add per-client rate limiting to the API gateway');
+    assert.equal(gemini.cwd, '/Users/dev/src/gateway');
+    assert.deepEqual([gemini.prompts, gemini.toolCalls, gemini.toolErrors, gemini.filesChanged], [1, 7, 1, 2]);
+    assert.equal(gemini.cost.source, 'estimated');
   });
 
   it('is deterministic for a given clock', async () => {

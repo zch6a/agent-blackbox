@@ -35,7 +35,7 @@ ${c.bold('Commands')}
   <session> is an id prefix (like git), a full id, ${c.cyan('last')}, or ${c.cyan('-2')} for the 2nd most recent.
 
 ${c.bold('Common options')}
-  -a, --agent <name>     Only these agents: claude, codex, opencode, deepseek (repeatable or comma-separated)
+  -a, --agent <name>     Only these agents: claude, codex, opencode, deepseek, gemini (repeatable or comma-separated)
       --root <a=path>    Read an agent's logs from another directory (repeatable)
       --since <when>     Only sessions since 7d, 24h, 2w, today, or a date (2026-11-01)
   -p, --project <text>   Only sessions whose working directory contains <text>
@@ -108,7 +108,7 @@ function catalogOptions(v: Values): CatalogOptions {
   for (const raw of v.agent ?? []) {
     for (const name of raw.split(',').filter(Boolean)) {
       const a = parseAgent(name);
-      if (!a) throw new UsageError(`Unknown agent "${name}". Use one of: claude, codex, opencode, deepseek.`);
+      if (!a) throw new UsageError(`Unknown agent "${name}". Use one of: claude, codex, opencode, deepseek, gemini.`);
       agents.push(a);
     }
   }

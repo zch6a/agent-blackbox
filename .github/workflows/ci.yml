@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
 
+# Read-only: tests need no write access.
 permissions:
   contents: read
 
@@ -18,14 +19,17 @@ jobs:
         os: [ubuntu-latest, windows-latest, macos-latest]
         node: ['22', '24']
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      # Actions pinned to commits; the token is not left in the checkout.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: ${{ matrix.node }}
-          cache: npm
-      - run: npm ci
+      # No install scripts from dependencies; the build is run explicitly below.
+      - run: npm ci --ignore-scripts
       - run: npm run typecheck
       - run: npm test
       - run: npm run build
       - name: Smoke test the built CLI
-        run: node dist/bin.js --version && node dist/bin.js doctor --no-color
+        run: node dist/bin.js --version && node dist/bin.js doctor --no-color && node dist/bin.js list --demo --no-color

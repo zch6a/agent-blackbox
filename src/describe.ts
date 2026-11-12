@@ -12,7 +12,8 @@ export function toolBrief(name: string, input: unknown, max = 160): string {
     }
     return '';
   };
-  const path = get('file_path', 'filePath', 'notebook_path', 'path', 'target_file');
+  // `absolute_path` and `dir_path`: Gemini CLI's read_file and list_directory.
+  const path = get('file_path', 'filePath', 'notebook_path', 'path', 'target_file', 'absolute_path', 'dir_path');
   const command = get('command', 'cmd', 'script');
   const lower = name.toLowerCase();
 

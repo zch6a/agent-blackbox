@@ -12,7 +12,7 @@
 
 **English** · [简体中文](README.zh-CN.md)
 
-Replay every **Claude Code**, **Codex**, **OpenCode** and **DeepSeek Harness** session —
+Replay every **Claude Code**, **Codex**, **Gemini CLI**, **OpenCode** and **DeepSeek Harness** session —
 prompts, tool calls, diffs, errors, tokens and dollars — in one local UI.
 
 Zero dependencies · Nothing leaves your machine · Works offline
@@ -41,12 +41,12 @@ Every coding agent already writes a detailed log to disk. They are just unreadab
 
 | | |
 |---|---|
-| 🛰 **One timeline, four agents** | Claude Code, OpenAI Codex (CLI & desktop), OpenCode and DeepSeek Harness, normalized into one model. |
+| 🛰 **One timeline, five agents** | Claude Code, OpenAI Codex (CLI & desktop), Gemini CLI, OpenCode and DeepSeek Harness, normalized into one model. |
 | 📈 **Flight path** | See a whole session at a glance: prompts, bursts of tool calls, errors, context compaction and the cost curve. Idle time is compressed. Click anywhere to jump. |
 | ▶️ **Replay** | Watch the session unfold step by step at 1×–64×, with a scrubber, a live clock and a running cost. |
 | 🧯 **Errors mode** | One key (`e`) shows only what failed — with the prompt that led to it. |
 | 📝 **Files** | Every file the agent touched, every diff, in order. |
-| ⑂ **Sub-agents** | Sessions spawned by another agent (Claude Code `Agent` tasks, Codex sub-agents, DeepSeek Harness and OpenCode child sessions) are linked to the exact tool call that started them, and their cost is never counted twice. |
+| ⑂ **Sub-agents** | Sessions spawned by another agent (Claude Code `Agent` tasks, Codex and Gemini CLI sub-agents, DeepSeek Harness and OpenCode child sessions) are linked to the exact tool call that started them, and their cost is never counted twice. |
 | 💸 **Costs you can trust** | Uses the cost the agent recorded itself, estimates whatever it did not record, and always marks estimates `~`. Duplicated usage lines are de-duplicated (a naive parser over-counts Claude Code tokens 2–3×). See [Accuracy](#accuracy). |
 | 📊 **Insights** | Daily spend, cost by agent / model / project, where the time went (slowest tools), failure rates, cache hit rate, most expensive sessions. |
 | 🔒 **Privacy check** | Flags DeepSeek Harness sessions whose logs were uploaded to DeepSeek. |
@@ -102,7 +102,7 @@ b6d2770e  deepseek  3d ago      51m  ~$0.31   12.4M    344  ↑ ✗1   整理笔
 
 `<session>` is a unique id prefix (like a git hash), a full id, `last`, or `-2` for the second most recent.
 
-Global options: `-a, --agent claude,codex,opencode,deepseek` · `--root codex=/backup/.codex/sessions` · `--no-cache` · `--no-color`.
+Global options: `-a, --agent claude,codex,gemini,opencode,deepseek` · `--root codex=/backup/.codex/sessions` · `--no-cache` · `--no-color`.
 
 ## Ask your AI assistant
 
@@ -125,6 +125,7 @@ redacts secrets in exports. Assistants that read Agent Skills from a folder: cop
 |---|---|---|
 | **Claude Code** | `~/.claude/projects/*/*.jsonl` (or `$CLAUDE_CONFIG_DIR`) | Uses Claude Code's own `cost-state` when present. Separates human prompts from slash commands, hooks, reminders and background-task notifications. |
 | **Codex** (CLI & desktop) | `~/.codex/sessions/**/rollout-*.jsonl` and `archived_sessions` (or `$CODEX_HOME`) | Reads `apply_patch` edits (also inside code-mode scripts), exit codes and de-duplicated token counts. |
+| **Gemini CLI** | `~/.gemini/tmp/*/chats/session-*.jsonl`, older `session-*.json`, sub-agents in `chats/<session>/` (or `$GEMINI_CLI_HOME`) | Applies the log the way Gemini CLI does (rewritten messages, rewinds, patches); the project from `projects.json`, also for older hash-named folders; edits from Gemini's own diffs; thought tokens billed as output. |
 | **OpenCode** | `~/.local/share/opencode/opencode.db` (or `$XDG_DATA_HOME`), plus the older `storage/` JSON layout | Read-only SQLite access; uses the cost OpenCode recorded. |
 | **DeepSeek Harness** | `~/.dsh/sessions/*/session-*/session.v4.jsonl.zstd` (or `$DSH_HOME`) | Decodes the append-only multi-frame zstd log, nested `run_code` tool calls, and the session-log upload flag. |
 

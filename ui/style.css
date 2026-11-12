@@ -28,6 +28,7 @@
   --codex: #10a37f;
   --opencode: #9b5de5;
   --deepseek: #4d6bfe;
+  --gemini: #d4568c;
   --shadow: 0 1px 2px rgba(16, 24, 40, 0.05), 0 1px 3px rgba(16, 24, 40, 0.06);
   --radius: 10px;
   --mono: ui-monospace, 'SF Mono', 'Cascadia Code', 'JetBrains Mono', Menlo, Consolas, 'Liberation Mono', monospace;
@@ -149,6 +150,7 @@ main { flex: 1; min-height: 0; display: flex; }
 .dot.codex { background: var(--codex); }
 .dot.opencode { background: var(--opencode); }
 .dot.deepseek-harness { background: var(--deepseek); }
+.dot.gemini-cli { background: var(--gemini); }
 .row-inline { display: flex; gap: 8px; align-items: center; }
 select.mini { padding: 4px 8px; border-radius: 7px; border: 1px solid var(--line-2); background: var(--bg-2); font-size: 12.5px; }
 .list-meta { font-size: 12px; color: var(--fg-3); margin-left: auto; }

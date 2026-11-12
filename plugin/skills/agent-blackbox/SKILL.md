@@ -1,6 +1,6 @@
 ---
 name: agent-blackbox
-description: Look back at AI coding agent sessions (Claude Code, Codex, OpenCode, DeepSeek Harness) with agent-blackbox. Use when the user asks what an agent did in a past session, where a session went wrong, which commands failed, which files were changed, how much their coding agents cost (per day, project, model), or wants a shareable replay of a session with secrets removed.
+description: Look back at AI coding agent sessions (Claude Code, Codex, Gemini CLI, OpenCode, DeepSeek Harness) with agent-blackbox. Use when the user asks what an agent did in a past session, where a session went wrong, which commands failed, which files were changed, how much their coding agents cost (per day, project, model), or wants a shareable replay of a session with secrets removed.
 license: MIT
 compatibility: Needs Node 22.15+ on the machine. Runs agent-blackbox with npx from GitHub (github:zch6a/agent-blackbox) unless a blackbox command is installed. Reads the agents' local session logs; nothing is uploaded.
 metadata:

@@ -14,6 +14,7 @@
     codex: 'Codex',
     opencode: 'OpenCode',
     'deepseek-harness': 'DeepSeek Harness',
+    'gemini-cli': 'Gemini CLI',
   };
   const IDLE_GAP = 5 * 60 * 1000;
   const CHUNK = 300;
@@ -314,7 +315,7 @@
       return;
     }
     if (!S.sessions.length) {
-      el.innerHTML = `<div class="empty"><h2>No sessions found</h2>agent-blackbox reads logs from Claude Code, Codex, OpenCode and DeepSeek Harness.<br/>Run <code>blackbox doctor</code> to see where it looked, or <code>blackbox demo</code> to try it on sample sessions.</div>`;
+      el.innerHTML = `<div class="empty"><h2>No sessions found</h2>agent-blackbox reads logs from Claude Code, Codex, OpenCode, DeepSeek Harness and Gemini CLI.<br/>Run <code>blackbox doctor</code> to see where it looked, or <code>blackbox demo</code> to try it on sample sessions.</div>`;
       return;
     }
     const list = filtered();

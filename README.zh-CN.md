@@ -12,7 +12,7 @@
 
 [English](README.md) · **简体中文**
 
-把 **Claude Code**、**Codex**、**OpenCode**、**DeepSeek Harness** 的每一次会话——
+把 **Claude Code**、**Codex**、**Gemini CLI**、**OpenCode**、**DeepSeek Harness** 的每一次会话——
 提问、工具调用、代码改动、报错、token 和花费——放进同一个本地界面里回放。
 
 零依赖 · 数据不出本机 · 可离线使用
@@ -41,12 +41,12 @@ npx github:zch6a/agent-blackbox
 
 | | |
 |---|---|
-| 🛰 **四家 Agent，一条时间线** | Claude Code、OpenAI Codex（CLI 和桌面版）、OpenCode、DeepSeek Harness，统一成同一种数据模型。 |
+| 🛰 **五家 Agent，一条时间线** | Claude Code、OpenAI Codex（CLI 和桌面版）、Gemini CLI、OpenCode、DeepSeek Harness，统一成同一种数据模型。 |
 | 📈 **飞行轨迹** | 一眼看完整个会话：提问、工具调用的密集程度、报错、上下文压缩和累计费用曲线。空闲时间会被压缩。点哪里跳到哪里。 |
 | ▶️ **回放** | 1×–64× 速度逐步重放会话，带进度条、时钟和实时累计费用。 |
 | 🧯 **只看报错** | 按 `e` 只显示失败的部分，并附上引发它的那次提问。 |
 | 📝 **文件改动** | Agent 碰过的每个文件、每一处 diff，按时间顺序排列。 |
-| ⑂ **子 Agent** | 由其他 Agent 派生的会话（Claude Code 的 `Agent` 任务、Codex 子 Agent、DeepSeek Harness 和 OpenCode 的子会话）会关联到派发它的那次工具调用，费用绝不重复计算。 |
+| ⑂ **子 Agent** | 由其他 Agent 派生的会话（Claude Code 的 `Agent` 任务、Codex 和 Gemini CLI 的子 Agent、DeepSeek Harness 和 OpenCode 的子会话）会关联到派发它的那次工具调用，费用绝不重复计算。 |
 | 💸 **可信的费用** | 优先用 Agent 自己记录的费用，没记录到的部分再估算，估算值一律标 `~`。重复的用量行会去重（不去重的话，Claude Code 的 token 会被多算 2–3 倍）。详见[数字是怎么算的](#数字是怎么算的)。 |
 | 📊 **洞察** | 每日花费，按 Agent / 模型 / 项目拆分，时间都花在哪（最慢的工具）、失败率、缓存命中率、最贵的会话。 |
 | 🔒 **隐私检查** | 标出日志被上传到 DeepSeek 的 DeepSeek Harness 会话。 |
@@ -94,7 +94,7 @@ blackbox                      # 等同于 `blackbox ui`
 
 `<会话>` 可以是唯一的 id 前缀（像 git 的哈希一样）、完整 id、`last`，或者 `-2` 表示倒数第二个。
 
-通用选项：`-a, --agent claude,codex,opencode,deepseek` · `--root codex=/backup/.codex/sessions` · `--no-cache` · `--no-color`。
+通用选项：`-a, --agent claude,codex,gemini,opencode,deepseek` · `--root codex=/backup/.codex/sessions` · `--no-cache` · `--no-color`。
 
 ## 直接问 AI 助手
 
@@ -114,6 +114,7 @@ agent-blackbox 自带一个 Agent Skill（技能）。在 Claude Code 里：
 | **Claude Code** | `~/.claude/projects/*/*.jsonl`（或 `$CLAUDE_CONFIG_DIR`） | 优先使用 Claude Code 自己记录的 `cost-state`。能区分人类提问与斜杠命令、hook、系统提醒、后台任务通知。 |
 | **Codex**（CLI 和桌面版） | `~/.codex/sessions/**/rollout-*.jsonl` 和 `archived_sessions`（或 `$CODEX_HOME`） | 解析 `apply_patch` 改动（包括 code mode 脚本里的）、退出码，并对 token 计数去重。 |
 | **OpenCode** | `~/.local/share/opencode/opencode.db`（或 `$XDG_DATA_HOME`），以及旧版 `storage/` JSON 目录 | 只读访问 SQLite；使用 OpenCode 记录的费用。 |
+| **Gemini CLI** | `~/.gemini/tmp/*/chats/session-*.jsonl`、旧版的 `session-*.json`，子 Agent 在 `chats/<会话>/` 下（或 `$GEMINI_CLI_HOME`） | 按 Gemini CLI 自己的方式还原日志（重写的消息、回退、补丁）；从 `projects.json` 找到项目目录，旧版按哈希命名的目录也能对上；文件改动取自 Gemini 自己的 diff；思考 token 按输出计费。 |
 | **DeepSeek Harness** | `~/.dsh/sessions/*/session-*/session.v4.jsonl.zstd`（或 `$DSH_HOME`） | 解码只追加写入的多帧 zstd 日志、`run_code` 里嵌套的工具调用，以及会话日志上传标记。 |
 
 要支持新的 Agent，只需要写一个文件——见 [CONTRIBUTING.md](CONTRIBUTING.md)。

@@ -1,16 +1,17 @@
 /**
  * The normalized data model. Every adapter (Claude Code, Codex, OpenCode,
- * DeepSeek Harness, ...) turns its native log format into these shapes, so the
+ * DeepSeek Harness, Gemini CLI) turns its native log format into these shapes, so the
  * CLI, the web UI and the exporters never have to know where a session came from.
  */
 
-export type AgentKind = 'claude-code' | 'codex' | 'opencode' | 'deepseek-harness';
+export type AgentKind = 'claude-code' | 'codex' | 'opencode' | 'deepseek-harness' | 'gemini-cli';
 
 export const AGENT_LABELS: Record<AgentKind, string> = {
   'claude-code': 'Claude Code',
   codex: 'Codex',
   opencode: 'OpenCode',
   'deepseek-harness': 'DeepSeek Harness',
+  'gemini-cli': 'Gemini CLI',
 };
 
 /** Token counts. `input` never includes cached tokens; cache reads/writes are separate. */

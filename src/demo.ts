@@ -4,6 +4,7 @@
  * real logs. Lets people try the UI before they have run any agent, and keeps
  * screenshots free of anyone's real data.
  */
+import { createHash } from 'node:crypto';
 import { appendFileSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -246,6 +247,27 @@ function scenarios(): Scenario[] {
         { k: 'edit', path: 'D:/code/fx/fx.py', before: '    amount, a, b = sys.argv[1:4]', after: '    if len(sys.argv) != 4:\n        sys.exit("用法: fx <金额> <币种> <目标币种>")\n    amount, a, b = sys.argv[1:4]' },
         { k: 'shell', cmd: 'python fx.py 100 USD CNY', out: '100 USD = 718.20 CNY', code: 0, secs: 2 },
         { k: 'say', text: '完成：`fx.py` 支持 `fx <金额> <币种> <目标币种>`，汇率缓存在 `.fx-cache.json`，一小时后自动刷新。' },
+      ],
+    },
+    {
+      agent: 'gemini-cli',
+      id: 'de30ce11-0009-4a1b-9c2d-0000000000c9',
+      title: 'Add per-client rate limiting to the API gateway',
+      cwd: '/Users/dev/src/gateway',
+      model: 'gemini-2.5-pro',
+      daysAgo: 0.6,
+      steps: [
+        { k: 'user', text: 'Clients are hammering /v1/search. Add a per-API-key rate limit (60 requests a minute) to the gateway, with a test.' },
+        { k: 'think', text: 'Find where requests are routed, then add a token bucket per key as middleware.' },
+        { k: 'grep', pattern: 'func NewRouter', hits: 'internal/http/router.go:18:func NewRouter(cfg Config) http.Handler {' },
+        { k: 'read', path: 'internal/http/router.go', body: 'package http\n\nfunc NewRouter(cfg Config) http.Handler {\n\tmux := http.NewServeMux()\n\tmux.Handle("/v1/search", search(cfg))\n\treturn logging(mux)\n}\n' },
+        { k: 'write', path: 'internal/http/ratelimit.go', body: 'package http\n\n// RateLimit allows `perMinute` requests per API key, then answers 429.\nfunc RateLimit(perMinute int, next http.Handler) http.Handler {\n\tbuckets := newBuckets(perMinute)\n\treturn http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {\n\t\tif !buckets.take(r.Header.Get("X-API-Key")) {\n\t\t\thttp.Error(w, "rate limited", http.StatusTooManyRequests)\n\t\t\treturn\n\t\t}\n\t\tnext.ServeHTTP(w, r)\n\t})\n}\n' },
+        { k: 'edit', path: 'internal/http/router.go', before: '\treturn logging(mux)', after: '\treturn logging(RateLimit(cfg.PerMinute, mux))' },
+        { k: 'shell', cmd: 'go test ./internal/http/...', out: '--- FAIL: TestRateLimit (0.00s)\n    ratelimit_test.go:21: request 61: got 200, want 429\nFAIL', code: 1, secs: 6 },
+        { k: 'think', text: 'The bucket refills on every request instead of once a second. Refill by elapsed time.' },
+        { k: 'edit', path: 'internal/http/ratelimit.go', before: '\tb.tokens = b.max', after: '\tb.tokens = min(b.max, b.tokens+elapsed*b.rate)' },
+        { k: 'shell', cmd: 'go test ./internal/http/...', out: 'ok  \tgateway/internal/http\t0.412s', code: 0, secs: 5 },
+        { k: 'say', text: 'Done: `RateLimit` middleware (token bucket per `X-API-Key`, 60/min, answers **429**), wired into `NewRouter`, with a test that the 61st request in a minute is refused.' },
       ],
     },
   ];
@@ -506,6 +528,89 @@ function writeDeepseek(dir: string, sc: Scenario, timed: Timed[], rand: () => nu
   writeFileSync(join(folder, 'session.v4.jsonl.zstd'), Buffer.concat(rows.map((r) => zlib.zstdCompressSync(Buffer.from(JSON.stringify(r) + '\n')))));
 }
 
+// ---------- Gemini CLI ----------
+function writeGemini(dir: string, sc: Scenario, timed: Timed[], rand: () => number): void {
+  const start = timed[0]?.t ?? Date.now();
+  const slug = sc.cwd.split('/').pop() ?? 'project';
+  const projectDir = join(dir, 'gemini', 'tmp', slug);
+  mkdirSync(join(projectDir, 'chats'), { recursive: true });
+  writeFileSync(join(projectDir, '.project_root'), sc.cwd);
+  const rows: unknown[] = [{ sessionId: sc.id, projectHash: createHash('sha256').update(sc.cwd).digest('hex'), startTime: iso(start), lastUpdated: iso(start), kind: 'main' }];
+  let n = 0;
+  let thoughts: { subject: string; description: string; timestamp: string }[] = [];
+  const tokens = () => {
+    const u = usageFor(n++, rand);
+    const thought = Math.round(u.output * 0.4);
+    // Gemini reports cached tokens inside the prompt count, thoughts beside the output.
+    return { input: u.input + u.cacheRead, output: u.output, cached: u.cacheRead, thoughts: thought, tool: 0, total: u.input + u.cacheRead + u.output + thought };
+  };
+  const gemini = (t: number, id: string, content: string, toolCalls?: unknown[]) => {
+    const row = { id, timestamp: iso(t), type: 'gemini', content, ...(toolCalls ? { toolCalls } : {}), thoughts, tokens: tokens(), model: sc.model };
+    thoughts = [];
+    return row;
+  };
+  const fr = (id: string, name: string, output: string) => [{ functionResponse: { id, name, response: { output } } }];
+  const diff = (file: string, before: string, after: string) =>
+    `Index: ${file}\n===================================================================\n--- ${file}\tCurrent\n+++ ${file}\tProposed\n@@ -1,${before ? before.split('\n').length : 0} +1,${after.split('\n').length} @@\n` +
+    [...(before ? before.split('\n').map((l) => '-' + l) : []), ...after.replace(/\n$/, '').split('\n').map((l) => '+' + l)].join('\n') + '\n';
+  timed.forEach(({ step, t, end }, i) => {
+    const id = `msg-${i}`;
+    const callId = `call-${i}`;
+    const call = (name: string, args: Record<string, unknown>, output: string, extra: Record<string, unknown> = {}) =>
+      gemini(t, id, '', [{ id: callId, name, args, result: fr(callId, name, output), status: 'success', timestamp: iso(t), ...extra }]);
+    switch (step.k) {
+      case 'user':
+        rows.push({ id, timestamp: iso(t), type: 'user', content: [{ text: step.text }] });
+        break;
+      case 'think':
+        thoughts.push({ subject: 'Planning', description: step.text, timestamp: iso(t) });
+        break;
+      case 'say':
+        rows.push(gemini(t, id, step.text));
+        break;
+      case 'read':
+        rows.push(call('read_file', { absolute_path: `${sc.cwd}/${step.path}` }, step.body));
+        break;
+      case 'grep':
+        rows.push(call('search_file_content', { pattern: step.pattern }, step.hits));
+        break;
+      case 'shell': {
+        const args = { command: step.cmd, description: 'Run the tests' };
+        // Written once while it runs, then again (same id) with the result: the second replaces the first.
+        rows.push(gemini(t, id, '', [{ id: callId, name: 'run_shell_command', args, status: 'executing', timestamp: iso(t) }]));
+        const out = `Command: ${step.cmd}\nDirectory: (root)\nOutput: ${step.out}\nError: (none)\nExit Code: ${step.code}\nSignal: (none)\nBackground PIDs: (none)\nProcess Group PGID: (none)`;
+        rows.push({ ...(rows[rows.length - 1] as object), timestamp: iso(t), toolCalls: [{ id: callId, name: 'run_shell_command', args, result: fr(callId, 'run_shell_command', out), status: 'success', timestamp: iso(end) }] });
+        break;
+      }
+      case 'edit': {
+        const file = `${sc.cwd}/${step.path}`;
+        rows.push(call('replace', { file_path: file, old_string: step.before, new_string: step.after }, `Successfully modified file: ${file} (1 replacements).`, {
+          resultDisplay: { fileDiff: diff(step.path.split('/').pop() ?? '', step.before, step.after), fileName: step.path.split('/').pop(), originalContent: step.before, newContent: step.after },
+        }));
+        break;
+      }
+      case 'write': {
+        const file = `${sc.cwd}/${step.path}`;
+        rows.push(call('write_file', { file_path: file, content: step.body }, `Successfully created and wrote to new file: ${file}.`, {
+          resultDisplay: { fileDiff: diff(step.path.split('/').pop() ?? '', '', step.body), fileName: step.path.split('/').pop(), originalContent: '', newContent: step.body },
+        }));
+        break;
+      }
+      case 'compact':
+        rows.push({ id, timestamp: iso(t), type: 'info', content: 'Chat history compressed.' });
+        break;
+    }
+    // A question the user rewound (Esc twice): gone from the session.
+    if (i === 0) {
+      rows.push({ id: 'msg-rewound', timestamp: iso(t + 1000), type: 'user', content: [{ text: 'Actually, use Redis for the buckets.' }] });
+      rows.push({ $rewindTo: 'msg-rewound' });
+    }
+  });
+  rows.push({ $set: { summary: sc.title, lastUpdated: iso(timed[timed.length - 1]?.end ?? start) } });
+  const stamp = iso(start).slice(0, 16).replace(/:/g, '-');
+  writeFileSync(join(projectDir, 'chats', `session-${stamp}-${sc.id.slice(0, 8)}.jsonl`), lines(rows));
+}
+
 // ---------- OpenCode ----------
 function writeOpencode(dir: string, sc: Scenario, timed: Timed[], rand: () => number): void {
   const folder = join(dir, 'opencode');
@@ -565,6 +670,7 @@ export function writeDemo(dir = join(tmpdir(), 'agent-blackbox-demo'), now = Dat
     if (sc.agent === 'claude-code') writeClaude(dir, sc, timed, rand);
     else if (sc.agent === 'codex') writeCodex(dir, sc, timed, rand);
     else if (sc.agent === 'deepseek-harness') writeDeepseek(dir, sc, timed, rand);
+    else if (sc.agent === 'gemini-cli') writeGemini(dir, sc, timed, rand);
     else writeOpencode(dir, sc, timed, rand);
   }
   return {
@@ -574,6 +680,7 @@ export function writeDemo(dir = join(tmpdir(), 'agent-blackbox-demo'), now = Dat
       codex: [join(dir, 'codex', 'sessions')],
       opencode: [join(dir, 'opencode')],
       'deepseek-harness': [join(dir, 'dsh', 'sessions')],
+      'gemini-cli': [join(dir, 'gemini', 'tmp')],
     },
   };
 }

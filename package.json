@@ -1,10 +1,11 @@
 {
   "name": "agent-blackbox",
   "version": "1.1.0",
-  "description": "A flight recorder for AI coding agents. Replay every Claude Code, Codex, OpenCode and DeepSeek Harness session: timeline, tool calls, diffs, tokens and cost. Local-only, zero dependencies.",
+  "description": "A flight recorder for AI coding agents. Replay every Claude Code, Codex, Gemini CLI, OpenCode and DeepSeek Harness session: timeline, tool calls, diffs, tokens and cost. Local-only, zero dependencies.",
   "keywords": [
     "claude-code",
     "codex",
+    "gemini-cli",
     "opencode",
     "deepseek",
     "ai-agent",
@@ -43,7 +44,7 @@
     "build": "tsc -p tsconfig.json",
     "prepare": "npm run build",
     "dev": "node src/bin.ts",
-    "test": "node --test --test-reporter=spec \"test/**/*.test.ts\"",
+    "test": "node --import ./test/isolate.ts --test --test-reporter=spec \"test/**/*.test.ts\"",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "check": "npm run typecheck && npm test",
     "prepublishOnly": "npm run check && npm run build"

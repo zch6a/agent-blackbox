@@ -13,7 +13,8 @@
   <text x="330" y="244" font-size="20" fill="#c4c9d6">回放每一次会话：提问、工具调用、代码改动、token 和花费，全在一个本地界面里。</text>
   <g transform="translate(330,300)"><rect width="134" height="36" rx="18" fill="#ff9a4d" fill-opacity=".14" stroke="#ff9a4d" stroke-opacity=".55"/><text x="67" y="24" text-anchor="middle" font-size="16" fill="#e8ebf2">Claude Code</text></g>
   <g transform="translate(476,300)"><rect width="76" height="36" rx="18" fill="#ff9a4d" fill-opacity=".14" stroke="#ff9a4d" stroke-opacity=".55"/><text x="38" y="24" text-anchor="middle" font-size="16" fill="#e8ebf2">Codex</text></g>
-  <g transform="translate(564,300)"><rect width="105" height="36" rx="18" fill="#ff9a4d" fill-opacity=".14" stroke="#ff9a4d" stroke-opacity=".55"/><text x="52" y="24" text-anchor="middle" font-size="16" fill="#e8ebf2">OpenCode</text></g>
-  <g transform="translate(680,300)"><rect width="182" height="36" rx="18" fill="#ff9a4d" fill-opacity=".14" stroke="#ff9a4d" stroke-opacity=".55"/><text x="91" y="24" text-anchor="middle" font-size="16" fill="#e8ebf2">DeepSeek Harness</text></g>
-  <g transform="translate(874,300)"><rect width="79" height="36" rx="18" fill="#ff9a4d" fill-opacity=".14" stroke="#ff9a4d" stroke-opacity=".55"/><text x="40" y="24" text-anchor="middle" font-size="16" fill="#e8ebf2">零依赖</text></g>
+  <g transform="translate(564,300)"><rect width="112" height="36" rx="18" fill="#ff9a4d" fill-opacity=".14" stroke="#ff9a4d" stroke-opacity=".55"/><text x="56" y="24" text-anchor="middle" font-size="16" fill="#e8ebf2">Gemini CLI</text></g>
+  <g transform="translate(688,300)"><rect width="105" height="36" rx="18" fill="#ff9a4d" fill-opacity=".14" stroke="#ff9a4d" stroke-opacity=".55"/><text x="52" y="24" text-anchor="middle" font-size="16" fill="#e8ebf2">OpenCode</text></g>
+  <g transform="translate(804,300)"><rect width="182" height="36" rx="18" fill="#ff9a4d" fill-opacity=".14" stroke="#ff9a4d" stroke-opacity=".55"/><text x="91" y="24" text-anchor="middle" font-size="16" fill="#e8ebf2">DeepSeek Harness</text></g>
+  <g transform="translate(998,300)"><rect width="79" height="36" rx="18" fill="#ff9a4d" fill-opacity=".14" stroke="#ff9a4d" stroke-opacity=".55"/><text x="40" y="24" text-anchor="middle" font-size="16" fill="#e8ebf2">零依赖</text></g>
 </svg>
