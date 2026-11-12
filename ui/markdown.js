@@ -23,17 +23,30 @@
   const URL_RE = 'https?:\\/\\/[A-Za-z0-9](?:(?!&lt;|&gt;|&quot;|&#39;)[^\\s<>")])*';
   // The label excludes [ as well as ]: otherwise every [ in a run like [[[[...] scans to the end and back,
   // which is quadratic (4 s for 50,000 brackets on a CI runner).
-  const LINK = new RegExp('\\[([^\\[\\]\\n]+)\\]\\((' + URL_RE + ')\\)', 'g');
-  const AUTOLINK = new RegExp('(^|[\\s(])(' + URL_RE + ')', 'g');
+  //
+  // All inline forms in ONE pass, left to right: each match becomes its final HTML and is never scanned again.
+  // (Separate .replace() passes once let the autolink pass find a URL inside the href="…" an earlier pass had
+  // written, which broke out of the attribute: `[x](https://a/(https://b/onfocus=…)` ran script.)
+  const INLINE = new RegExp(
+    '`([^`\\n]+)`' + // 1: code
+      '|\\*\\*([^*\\n]+)\\*\\*' + // 2: strong
+      '|(?<=^|[\\s(])\\*([^*\\n]+)\\*(?=[\\s).,!?:;]|$)' + // 3: em
+      '|\\[([^\\[\\]\\n]+)\\]\\((' + URL_RE + ')\\)' + // 4: label, 5: url
+      '|(?<=^|[\\s(])(' + URL_RE + ')', // 6: bare url
+    'g',
+  );
+  const anchor = (href, label) => '<a href="' + href + '" target="_blank" rel="noopener noreferrer">' + label + '</a>';
 
-  // `s` is already escaped, so the only markup in it is what we add here.
-  function inline(s) {
-    return s
-      .replace(/`([^`\n]+)`/g, '<code>$1</code>')
-      .replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>')
-      .replace(/(^|[\s(])\*([^*\n]+)\*(?=[\s).,!?:;]|$)/g, '$1<em>$2</em>')
-      .replace(LINK, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
-      .replace(AUTOLINK, '$1<a href="$2" target="_blank" rel="noopener noreferrer">$2</a>');
+  // `s` is already escaped, so the only markup in the result is what is added here. Inside a link label no
+  // further links are made (an anchor cannot hold another).
+  function inline(s, inLink = false) {
+    return s.replace(INLINE, (all, code, strong, em, label, url, bare) => {
+      if (code !== undefined) return '<code>' + code + '</code>';
+      if (strong !== undefined) return '<strong>' + inline(strong, inLink) + '</strong>';
+      if (em !== undefined) return '<em>' + inline(em, inLink) + '</em>';
+      if (label !== undefined) return inLink ? all : anchor(url, inline(label, true));
+      return inLink ? bare : anchor(bare, bare);
+    });
   }
 
   function md(src) {
@@ -60,7 +73,8 @@
       };
       const flushTable = () => {
         if (table) {
-          const rows = table.filter((r) => !/^\s*\|?\s*:?-{2,}/.test(r));
+          // The separator row. `^\s*\|?\s*` backtracked quadratically on a long run of spaces (2 s for 50,000).
+          const rows = table.filter((r) => !/^\s*(?:\|\s*)?:?-{2,}/.test(r));
           const cells = (r) => r.replace(/^\s*\|/, '').replace(/\|\s*$/, '').split('|');
           out.push(
             '<table>' +

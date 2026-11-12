@@ -66,6 +66,16 @@ export function absolutePath(path: string, cwd: string): string {
   return cwd.replace(/[\\/]+$/, '') + sep + rel;
 }
 
+/**
+ * A plain object with the same own keys (a key "__proto__" stays a key): what the cache and the worker pool give
+ * back after JSON, so every path yields the same shape.
+ */
+function plain<T>(o: Record<string, T>): Record<string, T> {
+  const out: Record<string, T> = {};
+  for (const k of Object.keys(o)) Object.defineProperty(out, k, { value: o[k], enumerable: true, writable: true, configurable: true });
+  return out;
+}
+
 /** A single tool call longer than this is almost certainly a paused session, not work. */
 export const MAX_TOOL_MS = 2 * 3600_000;
 
@@ -219,10 +229,12 @@ export class SessionBuilder {
     let linesAdded = 0;
     let linesRemoved = 0;
     const files = new Set<string>();
-    const toolCounts: Record<string, number> = {};
-    const toolMs: Record<string, number> = {};
-    const toolErrorCounts: Record<string, number> = {};
-    const modelUsage: Record<string, { usd: number; tokens: number }> = {};
+    // Keyed by names from the log: no prototype, so a tool called `constructor` or a model called `__proto__` is
+    // just a key (on a plain object they read Object.prototype's members and wrote onto Object.prototype).
+    const toolCounts: Record<string, number> = Object.create(null);
+    const toolMs: Record<string, number> = Object.create(null);
+    const toolErrorCounts: Record<string, number> = Object.create(null);
+    const modelUsage: Record<string, { usd: number; tokens: number }> = Object.create(null);
     let firstPrompt = '';
 
     for (const ev of this.events) {
@@ -294,10 +306,10 @@ export class SessionBuilder {
       linesRemoved,
       usage,
       cost,
-      toolCounts,
-      toolMs,
-      toolErrorCounts,
-      modelUsage,
+      toolCounts: plain(toolCounts),
+      toolMs: plain(toolMs),
+      toolErrorCounts: plain(toolErrorCounts),
+      modelUsage: plain(modelUsage),
       flags: [...this.flags],
       sizeBytes: ref.sizeBytes,
       events: this.events,

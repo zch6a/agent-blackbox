@@ -66,8 +66,14 @@ const ATTACKS = [
   'https://a.com)https://b.com',
   '&lt;script&gt; already-escaped &amp; text',
   '<!-- comment --><![CDATA[x]]>',
-  '\u0000<script> </script>',
+  '\u0000<script>\u2028</script>',
   '<<script>script>alert(1)<</script>/script>',
+  // Found by the 2026-11 review: an autolink inside the href an earlier pass had written broke out of it.
+  '[docs](https://x.example/(https://y/autofocus/onfocus=location=/javascript:void%28alert(1)%29/.source//)',
+  '[d](https://x/(https://y/onmouseover=alert(1)//)',
+  '**[d](https://x/(https://y/x=1//)**',
+  '[`https://y/onfocus=1`](https://x/)',
+  '(https://a/(https://b/(https://c/onload=1)))',
 ].map((s) => s.replace(/\\u0000/g, String.fromCharCode(0)).replace(/\\u2028/g, String.fromCharCode(0x2028)));
 
 describe('esc', () => {
@@ -108,8 +114,30 @@ describe('markdown renderer', () => {
     }
   });
 
+  it('survives random hostile links', () => {
+    // Links built from pieces: URLs inside URLs, brackets and parentheses, attribute-looking text.
+    const pieces = ['[', ']', '(', ')', 'https://x/', 'https://y.example/', '(https://', 'onfocus=', '/autofocus', '"', "'", '`', '**', '*', ' ', '&', '<', '>', 'a', '/', '=', '%28', '//'];
+    let seed = 7654321;
+    const rand = () => (seed = (seed * 1103515245 + 12345) % 2147483648) / 2147483648;
+    for (let i = 0; i < 20_000; i++) {
+      let s = '';
+      const len = 2 + Math.floor(rand() * 16);
+      for (let j = 0; j < len; j++) s += pieces[Math.floor(rand() * pieces.length)];
+      const input = rand() < 0.5 ? `[l](https://x/${s})` : s;
+      assertSafe(md(input), input);
+    }
+  });
+
+  it('keeps nested inline forms', () => {
+    assert.equal(md('**see [docs](https://a.example/x)**'), '<p><strong>see <a href="https://a.example/x" target="_blank" rel="noopener noreferrer">docs</a></strong></p>');
+    assert.equal(md('`**not bold**`'), '<p><code>**not bold**</code></p>');
+    assert.equal(md('[`a`](https://b.example/)'), '<p><a href="https://b.example/" target="_blank" rel="noopener noreferrer"><code>a</code></a></p>');
+    assert.equal(md('[https://in.example/](https://out.example/)'), '<p><a href="https://out.example/" target="_blank" rel="noopener noreferrer">https://in.example/</a></p>', 'no link inside a link');
+    assert.equal(md('go to https://a.example/x now'), '<p>go to <a href="https://a.example/x" target="_blank" rel="noopener noreferrer">https://a.example/x</a> now</p>');
+  });
+
   it('stays fast on pathological input (no catastrophic backtracking)', () => {
-    const inputs = ['*'.repeat(50_000), '['.repeat(50_000) + ']', '|'.repeat(100_000), 'https://'.repeat(20_000), '`'.repeat(50_000), '**a'.repeat(30_000), 'x'.repeat(2_000_000), '- a\n'.repeat(50_000)];
+    const inputs = [' '.repeat(50_000) + '|a|', '| ' + ' '.repeat(50_000) + '|','*'.repeat(50_000), '['.repeat(50_000) + ']', '|'.repeat(100_000), 'https://'.repeat(20_000), '`'.repeat(50_000), '**a'.repeat(30_000), 'x'.repeat(2_000_000), '- a\n'.repeat(50_000)];
     for (const input of inputs) {
       const t = performance.now();
       const out = md(input);

@@ -84,6 +84,26 @@ export interface RunningServer {
   close: () => Promise<void>;
 }
 
+/** A host in a URL or a Host header: IPv6 addresses go in brackets. */
+const hostPart = (h: string) => (h.includes(':') ? `[${h}]` : h);
+
+/** The address to open in a browser: a wildcard bind is opened on loopback. */
+export function serverUrl(host: string, port: number): string {
+  return `http://${host === '0.0.0.0' ? '127.0.0.1' : host === '::' ? '[::1]' : hostPart(host)}:${port}/`;
+}
+
+/**
+ * DNS-rebinding protection: answer only requests addressed to our own origin. Bound to every interface
+ * (`--host 0.0.0.0`, which the CLI warns about), any IP address of this machine is ours too: an IP literal in
+ * Host cannot be a rebinding attack, which needs a domain name. The API still needs the per-run token.
+ */
+export function hostAllowed(raw: string, host: string, port: number): boolean {
+  const h = raw.toLowerCase();
+  if ([`127.0.0.1:${port}`, `localhost:${port}`, `[::1]:${port}`, `${hostPart(host.toLowerCase())}:${port}`].includes(h)) return true;
+  if (host !== '0.0.0.0' && host !== '::') return false;
+  return new RegExp(`^(?:\\d{1,3}(?:\\.\\d{1,3}){3}|\\[[0-9a-f:.]+\\]):${port}$`).test(h);
+}
+
 export async function serve(opts: ServeOptions = {}): Promise<RunningServer> {
   const token = randomBytes(18).toString('base64url');
   const host = opts.host ?? '127.0.0.1';
@@ -132,11 +152,8 @@ export async function serve(opts: ServeOptions = {}): Promise<RunningServer> {
     return s;
   };
 
-  const allowedHosts = () => new Set([`127.0.0.1:${port}`, `localhost:${port}`, `[::1]:${port}`, `${host}:${port}`]);
-
   const handle = async (req: IncomingMessage, res: ServerResponse) => {
-    // DNS-rebinding protection: only answer requests addressed to our own loopback origin.
-    if (!allowedHosts().has(String(req.headers.host ?? '').toLowerCase())) return send(res, 421, 'Misdirected request', 'text/plain');
+    if (!hostAllowed(String(req.headers.host ?? ''), host, port)) return send(res, 421, 'Misdirected request', 'text/plain');
     const url = new URL(req.url ?? '/', `http://${req.headers.host}`);
     const path = url.pathname;
 
@@ -215,7 +232,7 @@ export async function serve(opts: ServeOptions = {}): Promise<RunningServer> {
     tryListen(opts.port ?? 4777, opts.port === undefined);
   });
   port = (server.address() as AddressInfo).port;
-  const url = `http://${host === '0.0.0.0' ? '127.0.0.1' : host}:${port}/`;
+  const url = serverUrl(host, port);
   // Start indexing right away so the first page load is fast.
   const indexed = getSummaries(false);
   indexed.catch(() => {});

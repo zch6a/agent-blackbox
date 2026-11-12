@@ -87,3 +87,46 @@ The plan in PROGRESS.md: an entry point for AI coding assistants on each finishe
 - **A bug found by writing the skill's test**: `blackbox show -2`, which `--help` documents ("-2 for the 2nd most recent"), failed with "Unknown option '-2'". Node's `parseArgs` takes any token starting with "-" for an option; the session resolver already understood "-2", nothing could reach it. `sessionShorthands()` moves bare `-N` tokens after "--" (positionals there), unless they follow an option that takes a value (`-n -2`). Tested through the CLI and directly.
 - `test/skill.test.ts`: frontmatter, plugin and marketplace against package.json, every export in the skill redacted, and every command in the skill's bash blocks run in order on the demo sessions (`--demo`, never real logs; the export into a temp folder).
 - README section "Ask your AI assistant", both languages.
+
+## Cycle 2, round 1 — v1.2.0 (2026-11-12)
+
+The first round of the second cycle. PROGRESS.md asked for it: an independent review and a check of everything on
+POSIX paths, because a review of skill-guard had found "on POSIX paths nothing is scanned", which a Windows machine
+never shows.
+
+- **An independent review** (someone who had not written it; no network; no real logs, only synthetic sessions in a
+  temp folder; the project untouched) reproduced 13 problems. The worst: **a stored XSS** in the Markdown renderer.
+  Inline formatting was a chain of `.replace()` passes; the autolink pass found a URL inside the `href` the link pass
+  had written and broke out of the attribute. A link in an assistant message, which a prompt-injected web page can
+  plant, ran script with no click in the live UI, with the page's API token. The fuzz tests had the right check
+  (no attribute but href/target/rel) and never generated a URL inside a URL in parentheses. Now one pass that never
+  rescans its output; the payloads are tests, plus a second fuzzer that builds links from URL pieces (the old
+  renderer fails it, the new one passes; checked in a real browser with the reviewer's session).
+- Also from the review: **escape sequences from logs reached the terminal** (clipboard writes, window titles,
+  screen clears, fake links, with `--no-color` too); **redaction** was quadratic on long runs, missed common secret
+  shapes and parsed-object secrets, over-redacted code, branches and package versions, and replaced the home folder
+  as a substring (with home `/`, every slash); two more quadratic patterns; **symlinked log folders skipped** (on
+  POSIX the usual way to keep logs on another disk); project names of Windows paths read on Linux; the Insights chart
+  dropping the newest days after 800; tool names like `constructor` breaking the counts; `--host ::1` and
+  `--host 0.0.0.0`; a malformed link freezing the UI; CLI typos and over-broad prefixes. Each is a test in
+  `test/review3.test.ts` (16 tests).
+- Found while fixing: on Windows `os.homedir()` throws when the home variable points somewhere that does not exist;
+  redaction and `~` display no longer depend on it (the log folders still do: an empty home would make every root
+  relative). And my first draft of the changelog said the tests had written into the real cache; checking showed they
+  had not (they read a real price file, and a missing root would have fallen back to the real folder), so it says that.
+- **Gemini CLI**, the fifth agent, from the format in Gemini CLI's source (no real log read): append-only JSONL that
+  rewrites itself (a message written again replaces the first, `$rewindTo`, `$patch`, `$set`), the older whole-file
+  JSON, sub-agents, project folders through `projects.json` and `.project_root` (and older SHA-256 folder names),
+  edits from Gemini's own diffs, shell exit codes, cached tokens inside the prompt and thought tokens beside the
+  output. A demo session in that format exercises the rewrite, the rewind and the `$set` title.
+- **Tests can no longer reach real sessions**: `test/isolate.ts` points the home folder, the cache and every agent's
+  folder variable at an empty temp folder for every test process, and a test checks every agent's default roots
+  are inside it. (Adding Gemini CLI would otherwise have made the suite read a real `~/.gemini`.)
+- **Engineering:** CI pins its actions to commits, keeps no token in the checkout and installs without dependency
+  scripts; a release workflow tests each tag, packs it, installs and runs the packed CLI, and attaches the `.tgz` to
+  the GitHub release (the job that can write runs nothing of the project). `scripts/screenshots.mjs` regenerates the
+  README screenshots from the demo (and refuses to write an error page over them: its first run did exactly that,
+  because the "no host resolution" rule also blocked 127.0.0.1).
+- README and banner: five agents; screenshots and social preview regenerated from the demo.
+
+Tests: 107 (was 81).

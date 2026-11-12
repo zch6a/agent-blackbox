@@ -158,7 +158,10 @@ Create `~/.config/agent-blackbox/pricing.json` (or point `BLACKBOX_PRICING` at a
 - Reads log files **read-only**. Never modifies, moves or uploads them.
 - The UI server binds to `127.0.0.1`, requires a random per-run token for every API call, and rejects requests whose `Host` header is not its own (DNS-rebinding protection).
 - No telemetry, no analytics, no network requests. The UI uses no web fonts or CDNs — exported HTML files work fully offline.
-- `--redact` is best-effort. Skim an export before posting it publicly.
+- Log text is hostile and treated that way: the UI and exports escape it and render only a small Markdown subset
+  (fuzzed in the tests), and the terminal shows control characters as symbols instead of running escape sequences.
+- `--redact` is best-effort: it knows common key and token formats, `name=value` secrets and secret-named fields,
+  e-mails and your home path, but not, say, a key split across two lines. Skim an export before posting it publicly.
 
 See [SECURITY.md](SECURITY.md) to report a vulnerability.
 

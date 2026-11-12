@@ -1,4 +1,3 @@
-import { basename } from 'node:path';
 import { localDate } from './format.ts';
 import { AGENT_LABELS, addUsage, emptyUsage, ownCost, totalTokens, type SessionSummary, type Usage } from './types.ts';
 
@@ -31,9 +30,15 @@ export function wallDuration(s: SessionSummary): number {
   return Math.max(0, s.endedAt - s.startedAt);
 }
 
+/** A count by name, from the object's own keys only (`constructor` is not inherited from Object.prototype). */
+function own(o: Record<string, number> | undefined, key: string): number {
+  return o && Object.hasOwn(o, key) && typeof o[key] === 'number' ? (o[key] as number) : 0;
+}
+
 export function projectName(cwd: string): string {
   if (!cwd) return '(unknown)';
-  return basename(cwd.replace(/[\\/]+$/, '')) || cwd;
+  // Either separator, whatever this machine uses: logs from Windows read on Linux or WSL (`--root`), and back.
+  return cwd.replace(/[\\/]+$/, '').split(/[\\/]/).pop() || cwd;
 }
 
 /** One key per directory: `F:\a\b`, `F:/a/b/` and `f:\a\b` are the same project. */
@@ -96,22 +101,25 @@ function add(r: StatRow, s: SessionSummary, share = 1): void {
   r.durationMs += activeDuration(s);
 }
 
-/** Insert empty rows for days without sessions so a chart's time axis is continuous. */
+/**
+ * Insert empty rows for days without sessions so a chart's time axis is continuous. Longer than `maxDays`: the
+ * most recent `maxDays` (counting back from the last day, so the newest spending is never the part cut off).
+ */
 export function fillDays(rows: StatRow[], maxDays = 800): StatRow[] {
   const sorted = [...rows].sort((a, b) => a.key.localeCompare(b.key));
   if (sorted.length < 2) return sorted;
   const byKey = new Map(sorted.map((r) => [r.key, r]));
-  const [y, m, d] = (sorted[0] as StatRow).key.split('-').map(Number) as [number, number, number];
-  const last = (sorted[sorted.length - 1] as StatRow).key;
+  const first = (sorted[0] as StatRow).key;
+  const [y, m, d] = (sorted[sorted.length - 1] as StatRow).key.split('-').map(Number) as [number, number, number];
   const out: StatRow[] = [];
   const cur = new Date(y, m - 1, d, 12); // noon: immune to DST jumps
   for (let i = 0; i < maxDays; i++) {
     const key = localDate(cur.getTime());
     out.push(byKey.get(key) ?? row(key));
-    if (key >= last) break;
-    cur.setDate(cur.getDate() + 1);
+    if (key <= first) break;
+    cur.setDate(cur.getDate() - 1);
   }
-  return out;
+  return out.reverse();
 }
 
 export function aggregate(sessions: SessionSummary[], by: GroupBy, opts: { fillGaps?: boolean } = {}): StatRow[] {
@@ -173,8 +181,9 @@ export function aggregate(sessions: SessionSummary[], by: GroupBy, opts: { fillG
           const r = get(tool);
           r.sessions += 1;
           r.toolCalls += n;
-          r.toolErrors += s.toolErrorCounts?.[tool] ?? 0;
-          r.durationMs += s.toolMs?.[tool] ?? 0; // for tools: time spent inside the tool
+          // Own keys only: summaries read back from the cache are plain objects again.
+          r.toolErrors += own(s.toolErrorCounts, tool);
+          r.durationMs += own(s.toolMs, tool); // for tools: time spent inside the tool
         }
         break;
     }

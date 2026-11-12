@@ -166,13 +166,22 @@
   $('#theme').addEventListener('click', cycleTheme);
 
   // ---------- routing ----------
+  // A hand-edited or truncated link (`#/s/%E0`) must not stop the UI from starting: an undecodable key opens nothing.
+  function decodeKey(s) {
+    try {
+      return decodeURIComponent(s);
+    } catch {
+      return '';
+    }
+  }
+
   function route() {
     const h = location.hash || '#/';
     const m = /^#\/s\/(.+)$/.exec(h);
     $$('#nav a').forEach((a) => a.classList.toggle('on', (a.dataset.view === 'insights') === h.startsWith('#/insights')));
     if (!LIVE) {
       // An exported file carries the session and its sub-agents; the hash picks which one is shown.
-      const wanted = m ? decodeURIComponent(m[1]) : '';
+      const wanted = m ? decodeKey(m[1]) : '';
       const pick = S.sessions.find((x) => x.key === wanted) || BOOT.session;
       return openSession(null, pick);
     }
@@ -182,7 +191,7 @@
       return showInsights();
     }
     S.view = 'sessions';
-    const key = m ? decodeURIComponent(m[1]) : null;
+    const key = m ? decodeKey(m[1]) || null : null;
     renderShell();
     if (key) openSession(key);
     else showEmptyDetail();

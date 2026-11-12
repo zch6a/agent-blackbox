@@ -46,7 +46,9 @@ function firstPatchFile(text: string): string | null {
 /** Short failure reason from a tool output, e.g. `exit 1` or the first error line. */
 export function errorBrief(output: string, exitCode?: number): string {
   if (exitCode !== undefined && exitCode !== 0) return `exit ${exitCode}`;
-  const exit = /(?:exit[_ ]code["']?\s*[:=]?\s*|exited with code |Exit code: )(-?\d+)/i.exec(output);
+  // `\s*(?:[:=]\s*)?`, not `\s*[:=]?\s*`: the two runs of spaces backtracked against each other (1 s for
+  // "exit code" and 50,000 spaces).
+  const exit = /(?:exit[_ ]code["']?\s*(?:[:=]\s*)?|exited with code |Exit code: )(-?\d+)/i.exec(output);
   if (exit && exit[1] !== '0') return `exit ${exit[1]}`;
   const line = output
     .split('\n')

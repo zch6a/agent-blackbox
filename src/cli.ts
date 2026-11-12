@@ -14,7 +14,7 @@ import { serve } from './server.ts';
 import { hasSqlite } from './sqlite.ts';
 import { aggregate, GROUPS, overview, type GroupBy } from './stats.ts';
 import { AGENT_LABELS, type AgentKind, type Session, type SessionSummary } from './types.ts';
-import { statSafe, tildify } from './util.ts';
+import { safeDeep, safeText, statSafe, tildify } from './util.ts';
 import { VERSION } from './version.ts';
 import { hasZstdSupport } from './zstd.ts';
 
@@ -175,7 +175,8 @@ async function cmdList(v: Values): Promise<void> {
     process.stdout.write(JSON.stringify(list, null, 2) + '\n');
     return;
   }
-  console.log(renderList(list));
+  // Text from logs goes to the terminal with its control characters made visible (no escape sequences run).
+  console.log(renderList(safeDeep(list)));
   const notes: string[] = [];
   if (total > list.length) notes.push(`${list.length} of ${total} sessions shown · --all or -n <count> for more`);
   if (hidden) notes.push(`${plural(hidden, 'sub-agent session')} hidden · --subagents to include`);
@@ -195,13 +196,13 @@ async function cmdShow(v: Values, query: string | undefined): Promise<void> {
     return;
   }
   await printPaged(
-    renderSession(session, {
+    renderSession(safeDeep(session), {
       thinking: !!v.thinking,
       full: !!v.full,
       cost: !!v.cost,
       errorsOnly: !!v.errors,
       noTools: !!v['no-tools'],
-      children: all.filter((s) => s.parentKey === ref.key).sort((a, b) => a.startedAt - b.startedAt),
+      children: safeDeep(all.filter((s) => s.parentKey === ref.key).sort((a, b) => a.startedAt - b.startedAt)),
     }),
     { enabled: !v['no-pager'] },
   );
@@ -219,8 +220,42 @@ async function cmdStats(v: Values): Promise<void> {
     console.log(c.dim('No sessions match.'));
     return;
   }
-  console.log(renderStats(list, by));
+  console.log(renderStats(safeDeep(list), by));
   console.log(c.dim(`\nCosts marked ~ are estimates from list prices (updated ${PRICES_UPDATED}). Override with ~/.config/agent-blackbox/pricing.json.`));
+}
+
+const COMMANDS = ['ui', 'open', 'list', 'ls', 'show', 'replay', 'stats', 'export', 'doctor', 'demo', 'help'];
+
+/**
+ * The command a word is probably a typo of (`stat` → stats, `lsit` → list), or null. Letters only: anything
+ * with a digit (`de30c1a0`) is an id prefix, never a typo.
+ */
+export function closeCommand(word: string): string | null {
+  const w = word.toLowerCase();
+  if (!/^[a-z]{3,}$/.test(w) || COMMANDS.includes(w)) return null;
+  let best: string | null = null;
+  let bestD = Infinity;
+  for (const cmd of COMMANDS) {
+    if (cmd.length < 3) continue;
+    const d = distance(w, cmd);
+    if (d < bestD) [best, bestD] = [cmd, d];
+  }
+  return bestD <= (w.length <= 4 ? 1 : 2) ? best : null;
+}
+
+/** Edit distance with transpositions (optimal string alignment). */
+function distance(a: string, b: string): number {
+  const d = Array.from({ length: a.length + 1 }, (_, i) => Array.from({ length: b.length + 1 }, (_, j) => (i === 0 ? j : j === 0 ? i : 0)));
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      const row = d[i] as number[];
+      const prev = d[i - 1] as number[];
+      const cost = a[i - 1] === b[j - 1] ? 0 : 1;
+      row[j] = Math.min((prev[j] as number) + 1, (row[j - 1] as number) + 1, (prev[j - 1] as number) + cost);
+      if (i > 1 && j > 1 && a[i - 1] === b[j - 2] && a[i - 2] === b[j - 1]) row[j] = Math.min(row[j] as number, ((d[i - 2] as number[])[j - 2] as number) + 1);
+    }
+  }
+  return (d[a.length] as number[])[b.length] as number;
 }
 
 function slug(text: string): string {
@@ -237,8 +272,10 @@ async function cmdExport(v: Values, query: string | undefined): Promise<void> {
   const opts = catalogOptions(v);
   const ref = await resolveSession(query ?? 'last', opts);
   const fromExt = v.output && v.output !== '-' ? extname(v.output).slice(1).toLowerCase() : '';
-  const format = v.format ?? (fromExt === 'markdown' ? 'md' : fromExt || 'html');
-  if (!['html', 'md', 'json'].includes(format)) throw new UsageError('--format must be html, md or json');
+  const KNOWN: Record<string, ExportFormat> = { html: 'html', htm: 'html', md: 'md', markdown: 'md', json: 'json' };
+  if (!v.format && fromExt && !KNOWN[fromExt]) throw new UsageError(`Cannot tell the format from "${v.output}": add --format html, md or json`);
+  const format = v.format ?? (fromExt ? KNOWN[fromExt] : 'html');
+  if (!format || !['html', 'md', 'json'].includes(format)) throw new UsageError('--format must be html, md or json');
   // Family links come from the list; an HTML export also carries the sub-agent sessions themselves.
   const all = await listSessions({ ...opts, onProgress: undefined });
   const withLinks = (s: Session): Session => {
@@ -256,7 +293,7 @@ async function cmdExport(v: Values, query: string | undefined): Promise<void> {
     format === 'html'
       ? await exportHtml(session, children)
       : format === 'md'
-        ? exportMarkdown(session, { thinking: !!v.thinking, outputs: !!v.outputs })
+        ? exportMarkdown(safeDeep(session), { thinking: !!v.thinking, outputs: !!v.outputs })
         : exportJson(session);
   if (v.output === '-') {
     process.stdout.write(body);
@@ -265,7 +302,7 @@ async function cmdExport(v: Values, query: string | undefined): Promise<void> {
   const file = resolve(v.output ?? `${slug(session.title)}-${session.id.slice(0, 8)}.${format as ExportFormat}`);
   await mkdir(dirname(file), { recursive: true });
   await writeFile(file, body);
-  console.log(`${c.green('✓')} Exported ${c.bold(session.title)}${children.length ? c.dim(` with ${plural(children.length, 'sub-agent')}`) : ''} → ${file}`);
+  console.log(`${c.green('✓')} Exported ${c.bold(safeText(session.title))}${children.length ? c.dim(` with ${plural(children.length, 'sub-agent')}`) : ''} → ${file}`);
   if (!v.redact) console.log(c.dim('  Tip: add --redact to scrub API keys, tokens, e-mails and your home path before sharing.'));
   else console.log(c.dim('  Redaction is best-effort — skim the file before posting it publicly.'));
 }
@@ -388,12 +425,24 @@ export async function main(argv: string[]): Promise<number> {
         await cmdDoctor(v);
         return 0;
       default: {
+        // A typo of a command (`stat`, `lsit`) is a typo, not a session id.
+        const near = closeCommand(cmd);
+        if (near) {
+          console.error(c.red(`Unknown command "${safeText(cmd)}".`) + ` Did you mean ${c.bold(`blackbox ${near}`)}?`);
+          return 2;
+        }
         // `blackbox <id>` is a shortcut for `blackbox show <id>`.
-        if (rest.length === 0 && /^[\w-]{4,}$/.test(cmd)) {
-          await cmdShow(v, cmd);
+        if (rest.length === 0 && /^[\w:-]{4,}$/.test(cmd)) {
+          try {
+            await cmdShow(v, cmd);
+          } catch (err) {
+            if (!(err instanceof SessionNotFoundError)) throw err;
+            console.error(c.yellow(`"${safeText(cmd)}" is neither a command nor a session.`) + c.dim(' Run `blackbox --help`, or `blackbox list` for session ids.'));
+            return 2;
+          }
           return 0;
         }
-        console.error(c.red(`Unknown command "${cmd}".`) + c.dim(' Run `blackbox --help`.'));
+        console.error(c.red(`Unknown command "${safeText(cmd)}".`) + c.dim(' Run `blackbox --help`.'));
         return 2;
       }
     }
@@ -404,7 +453,7 @@ export async function main(argv: string[]): Promise<number> {
     }
     if (err instanceof AmbiguousSessionError) {
       console.error(c.yellow(err.message));
-      for (const r of err.candidates) console.error(`  ${r.id}  ${c.dim(AGENT_LABELS[r.agent])}`);
+      for (const r of err.candidates) console.error(`  ${safeText(r.id)}  ${c.dim(AGENT_LABELS[r.agent])}`);
       return 1;
     }
     if (err instanceof SessionNotFoundError) {

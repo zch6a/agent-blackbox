@@ -315,7 +315,9 @@ export async function resolveSession(query: string, opts: CatalogOptions = {}): 
   const exact = refs.find((r) => r.key === q || r.id === q);
   if (exact) return exact;
   const lower = q.toLowerCase();
-  const matches = refs.filter((r) => r.id.toLowerCase().startsWith(lower) || r.key.toLowerCase().startsWith(lower));
+  // A key prefix only when the query names the agent (`codex:019a`): every key starts with its agent's name, so
+  // `c` or `claude` would otherwise match all of that agent's sessions.
+  const matches = refs.filter((r) => r.id.toLowerCase().startsWith(lower) || (lower.includes(':') && r.key.toLowerCase().startsWith(lower)));
   if (matches.length === 1) return matches[0]!;
   if (matches.length > 1) throw new AmbiguousSessionError(`"${q}" matches ${matches.length} sessions; use a longer prefix.`, matches.slice(0, 10));
   throw new SessionNotFoundError(`No session matches "${q}". Try \`blackbox list\`.`);

@@ -1,5 +1,5 @@
 import { createReadStream } from 'node:fs';
-import { readdir, stat } from 'node:fs/promises';
+import { readdir, realpath, stat } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { join, sep } from 'node:path';
 import { createInterface } from 'node:readline';
@@ -83,9 +83,15 @@ export function tryJson(text: string): unknown {
 /** Recursively list files whose basename matches `test`, skipping unreadable dirs. */
 export async function walk(root: string, test: (name: string) => boolean, maxDepth = 8): Promise<string[]> {
   const out: string[] = [];
+  // Symbolic links (a project folder linked in from another disk, a Windows junction) are followed; each real
+  // folder is visited once, so a link back up the tree cannot loop.
+  const seen = new Set<string>();
   async function visit(dir: string, depth: number): Promise<void> {
     let entries;
     try {
+      const real = await realpath(dir);
+      if (seen.has(real)) return;
+      seen.add(real);
       entries = await readdir(dir, { withFileTypes: true });
     } catch {
       return;
@@ -93,9 +99,17 @@ export async function walk(root: string, test: (name: string) => boolean, maxDep
     await Promise.all(
       entries.map(async (e) => {
         const full = join(dir, e.name);
-        if (e.isDirectory()) {
+        let isDir = e.isDirectory();
+        let isFile = e.isFile();
+        if (e.isSymbolicLink()) {
+          // Only a regular file or a folder: a link to a FIFO or a device would block the reader.
+          const s = await stat(full).catch(() => null);
+          isDir = !!s?.isDirectory();
+          isFile = !!s?.isFile();
+        }
+        if (isDir) {
           if (depth < maxDepth && e.name !== 'node_modules') await visit(full, depth + 1);
-        } else if (e.isFile() && test(e.name)) {
+        } else if (isFile && test(e.name)) {
           out.push(full);
         }
       }),
@@ -114,13 +128,24 @@ export async function statSafe(path: string): Promise<{ mtimeMs: number; size: n
   }
 }
 
+/** The OS home folder, or '' when there is none: `os.homedir()` throws in some containers and sandboxes. */
+export function safeHomedir(): string {
+  try {
+    return homedir();
+  } catch {
+    return '';
+  }
+}
+
+/** Where agents keep their logs. Throws without a home folder: '' would make every default root relative to the
+ * current folder. */
 export function home(): string {
   return process.env.BLACKBOX_HOME_OVERRIDE || homedir();
 }
 
 /** Replace the home directory prefix with `~` for display. */
 export function tildify(p: string): string {
-  const h = homedir();
+  const h = safeHomedir();
   if (!p || !h) return p;
   const lower = process.platform === 'win32';
   const a = lower ? p.toLowerCase() : p;
@@ -137,6 +162,36 @@ export function truncate(text: string, max: number): string {
 
 export function oneLine(text: string): string {
   return text.replace(/\s+/g, ' ').trim();
+}
+
+// C0 controls except tab and newline, DEL, C1 controls, and the bidirectional overrides and isolates.
+const UNSAFE_TEXT = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u202A-\u202E\u2066-\u2069]/g;
+
+/**
+ * Text from a session, made safe for a terminal or a Markdown file: control characters become visible symbols
+ * (ESC → ␛), so an escape sequence an agent or a tool printed (clear the screen, set the title, write the
+ * clipboard with OSC 52, a disguised OSC 8 link) is shown, never executed; bidi overrides become `�`.
+ */
+export function safeText(s: string): string {
+  return s.replace(UNSAFE_TEXT, (ch) => {
+    const code = ch.charCodeAt(0);
+    if (code < 0x20) return String.fromCharCode(0x2400 + code);
+    if (code === 0x7f) return '␡';
+    return '�';
+  });
+}
+
+/** `safeText` on every string inside a value (a session, a list of summaries), returning a copy. */
+export function safeDeep<T>(v: T): T {
+  if (typeof v === 'string') return safeText(v) as T;
+  if (Array.isArray(v)) return v.map(safeDeep) as T;
+  if (isObject(v)) {
+    const out: Record<string, unknown> = {};
+    // defineProperty: a key named "__proto__" (a tool's name, say) is a key, not the copy's prototype.
+    for (const [k, x] of Object.entries(v)) Object.defineProperty(out, safeText(k), { value: safeDeep(x), enumerable: true, writable: true, configurable: true });
+    return out as T;
+  }
+  return v;
 }
 
 /** Stable, URL-safe key for a session ref. */
