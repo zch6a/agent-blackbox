@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [1.1.0] — 2026-11-12
+
+### Added
+- An Agent Skill and a Claude Code plugin: `/plugin marketplace add zch6a/agent-blackbox`, then
+  `/plugin install agent-blackbox@agent-blackbox`. Ask the assistant what went wrong in a session, what your agents
+  cost, or for a shareable replay; the skill keeps it to the sessions you ask about and always redacts exports. A test
+  runs every command it gives, on the demo sessions.
+
+### Fixed
+- `show -2` (and every `-N` session shorthand that `--help` promises) failed with "Unknown option '-2'": the argument
+  parser took it for an option. Such tokens are now read as the session, unless they are an option's value (`-n -2`).
+
 ## [1.0.1] — 2026-11-12
 
 ### Fixed

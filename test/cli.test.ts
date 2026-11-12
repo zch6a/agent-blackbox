@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import { after, before, describe, it } from 'node:test';
 import { fileURLToPath } from 'node:url';
 import { listSessions } from '../src/catalog.ts';
+import { sessionShorthands } from '../src/cli.ts';
 import { serve } from '../src/server.ts';
 import { catalogRoots, CLAUDE_ID, CODEX_ID, makeFixture, rootArgs, type Fixture } from './helpers.ts';
 
@@ -208,5 +209,20 @@ describe('server', () => {
     } finally {
       await srv.close();
     }
+  });
+});
+
+describe('session shorthands', () => {
+  it('"-2" is the 2nd most recent session, not an unknown option (as --help promises)', async () => {
+    const second = (await listSessions({ roots: catalogRoots(fx) }))[1];
+    assert.ok(second);
+    const { out, err, result } = await run('show', '-2', '--no-pager');
+    assert.equal(result, 0, err);
+    assert.match(out, new RegExp(second.title.slice(0, 20).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  });
+  it('a number that is the value of an option stays with it', () => {
+    assert.deepEqual(sessionShorthands(['show', '-2', '--full']), ['show', '--full', '--', '-2']);
+    assert.deepEqual(sessionShorthands(['list', '-n', '-2']), ['list', '-n', '-2']);
+    assert.deepEqual(sessionShorthands(['show', 'last']), ['show', 'last']);
   });
 });

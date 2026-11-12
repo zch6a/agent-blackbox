@@ -104,6 +104,21 @@ b6d2770e  deepseek  3d ago      51m  ~$0.31   12.4M    344  ↑ ✗1   整理笔
 
 Global options: `-a, --agent claude,codex,opencode,deepseek` · `--root codex=/backup/.codex/sessions` · `--no-cache` · `--no-color`.
 
+## Ask your AI assistant
+
+agent-blackbox comes with an Agent Skill. In Claude Code:
+
+```text
+/plugin marketplace add zch6a/agent-blackbox
+/plugin install agent-blackbox@agent-blackbox
+```
+
+Then ask "what went wrong in my previous session?", "what did my agents cost this month, per project?" or "make a
+shareable replay of yesterday's session". The assistant runs agent-blackbox and answers from the logs. The skill keeps
+it careful with them: it reads only the sessions you ask about, summarises instead of pasting logs back, and always
+redacts secrets in exports. Assistants that read Agent Skills from a folder: copy
+[`plugin/skills/agent-blackbox`](plugin/skills/agent-blackbox/SKILL.md) into theirs.
+
 ## Supported agents
 
 | Agent | Where it reads from | Notes |

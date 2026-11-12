@@ -1,0 +1,12 @@
+{
+  "name": "agent-blackbox",
+  "description": "agent-blackbox for Claude Code: a flight recorder for AI coding agents.",
+  "owner": { "name": "zch6a" },
+  "plugins": [
+    {
+      "name": "agent-blackbox",
+      "source": "./plugin",
+      "description": "What did the agent do, what failed, what did it cost: replay coding agent sessions, locally."
+    }
+  ]
+}

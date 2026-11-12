@@ -1,0 +1,10 @@
+{
+  "name": "agent-blackbox",
+  "description": "Look back at AI coding agent sessions: what an agent did, what failed, which files changed, what it cost, and shareable replays with secrets removed. Local only.",
+  "version": "1.1.0",
+  "author": { "name": "zch6a" },
+  "homepage": "https://github.com/zch6a/agent-blackbox",
+  "repository": "https://github.com/zch6a/agent-blackbox",
+  "license": "MIT",
+  "keywords": ["claude-code", "codex", "sessions", "cost", "observability"]
+}

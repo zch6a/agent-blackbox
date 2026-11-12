@@ -313,10 +313,26 @@ async function cmdUi(v: Values): Promise<void> {
   console.log(c.dim(`Indexed ${list.length} sessions · ${money(total)} total.`));
 }
 
+/**
+ * "-2" is the 2nd most recent session, not an option, but parseArgs takes anything that starts with "-" for one
+ * ("Unknown option '-2'"). Such tokens are moved after "--", where they are positionals, unless they are the value
+ * of an option that takes one (`-n -2`).
+ */
+export function sessionShorthands(argv: string[]): string[] {
+  const takesValue = new Set(Object.entries(OPTIONS).flatMap(([name, o]) =>
+    o.type === 'string' ? [`--${name}`, ...('short' in o && o.short ? [`-${o.short}`] : [])] : []));
+  const moved: string[] = [];
+  const kept: string[] = [];
+  argv.forEach((a, i) => (/^-\d+$/.test(a) && !takesValue.has(argv[i - 1] ?? '') ? moved : kept).push(a));
+  if (!moved.length) return argv;
+  const dashes = kept.indexOf('--');
+  return dashes < 0 ? [...kept, '--', ...moved] : [...kept.slice(0, dashes + 1), ...moved, ...kept.slice(dashes + 1)];
+}
+
 export async function main(argv: string[]): Promise<number> {
   let parsed;
   try {
-    parsed = parseArgs({ args: argv, options: OPTIONS, allowPositionals: true, strict: true });
+    parsed = parseArgs({ args: sessionShorthands(argv), options: OPTIONS, allowPositionals: true, strict: true });
   } catch (err) {
     console.error(c.red((err as Error).message));
     console.error(c.dim('Run `blackbox --help` for usage.'));

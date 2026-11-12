@@ -96,6 +96,17 @@ blackbox                      # 等同于 `blackbox ui`
 
 通用选项：`-a, --agent claude,codex,opencode,deepseek` · `--root codex=/backup/.codex/sessions` · `--no-cache` · `--no-color`。
 
+## 直接问 AI 助手
+
+agent-blackbox 自带一个 Agent Skill（技能）。在 Claude Code 里：
+
+```text
+/plugin marketplace add zch6a/agent-blackbox
+/plugin install agent-blackbox@agent-blackbox
+```
+
+然后问它“我上一个会话哪里出了问题？”“这个月各项目的 Agent 花了多少钱？”或者“把昨天那个会话做成可以分享的回放”。助手会运行 agent-blackbox，根据日志回答。技能会让它谨慎对待这些日志：只读你问到的会话，用总结代替大段粘贴，导出时一律去掉密钥。从文件夹读取技能的其他助手：把 [`plugin/skills/agent-blackbox`](plugin/skills/agent-blackbox/SKILL.md) 复制到它们的技能文件夹。
+
 ## 支持的 Agent
 
 | Agent | 读取位置 | 说明 |

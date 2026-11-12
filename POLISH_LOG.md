@@ -78,3 +78,12 @@ Security and failure modes — the round for things that only go wrong on someon
 - Add `repository` to `package.json` once the GitHub repo exists (npm needs it for README images), then publish.
 - Gemini CLI and Cursor adapters if their local logs are readable.
 - A `blackbox watch` TUI for a running session.
+
+## Agent Skill — 2026-11-12 (1.1.0)
+
+The plan in PROGRESS.md: an entry point for AI coding assistants on each finished tool.
+
+- `plugin/skills/agent-blackbox/SKILL.md`, `.claude-plugin/marketplace.json`, `plugin/.claude-plugin/plugin.json` (`claude plugin validate` passes both). The skill: sessions are private (read only what the user asks about, summarise rather than paste, send nothing anywhere, always `--redact` exports); which session (the one the assistant is running in is usually the most recent, so "my previous session" is `-2`); `list --json` with the fields named, `show -2 --errors`, `show --json` events, `stats --by`, `export --redact`, `doctor`.
+- **A bug found by writing the skill's test**: `blackbox show -2`, which `--help` documents ("-2 for the 2nd most recent"), failed with "Unknown option '-2'". Node's `parseArgs` takes any token starting with "-" for an option; the session resolver already understood "-2", nothing could reach it. `sessionShorthands()` moves bare `-N` tokens after "--" (positionals there), unless they follow an option that takes a value (`-n -2`). Tested through the CLI and directly.
+- `test/skill.test.ts`: frontmatter, plugin and marketplace against package.json, every export in the skill redacted, and every command in the skill's bash blocks run in order on the demo sessions (`--demo`, never real logs; the export into a temp folder).
+- README section "Ask your AI assistant", both languages.
