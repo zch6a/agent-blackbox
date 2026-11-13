@@ -130,3 +130,7 @@ never shows.
 - README and banner: five agents; screenshots and social preview regenerated from the demo.
 
 Tests: 107 (was 81).
+
+## Lockfile - 2026-11-13
+
+`package-lock.json` recorded the 23 download URLs from this machine's npm mirror (`registry.npmmirror.com`) instead of the public registry, so CI and anyone installing fetched from a mirror they never chose. Every `resolved` URL now points at `registry.npmjs.org`; nothing else changed (same versions, and the integrity hashes still match because the tarballs are identical). Checked: `npm ci --ignore-scripts`, `npm run check` and the tests pass; `npm audit` against the public registry finds 0 vulnerabilities.
