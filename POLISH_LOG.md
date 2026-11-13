@@ -134,3 +134,9 @@ Tests: 107 (was 81).
 ## Lockfile - 2026-11-13
 
 `package-lock.json` recorded the 23 download URLs from this machine's npm mirror (`registry.npmmirror.com`) instead of the public registry, so CI and anyone installing fetched from a mirror they never chose. Every `resolved` URL now points at `registry.npmjs.org`; nothing else changed (same versions, and the integrity hashes still match because the tarballs are identical). Checked: `npm ci --ignore-scripts`, `npm run check` and the tests pass; `npm audit` against the public registry finds 0 vulnerabilities.
+
+### 2026-11-14 — Chinese README: AI tone
+
+5 places changed, all decorative ——: the two around the intro's list (now commas), and those in the replay line, the new-agent line and the cost and token notes (now commas or full stops).
+The checks follow the findings of lieflat-less-ai-tone (shiujan, CC BY-NC 4.0); its findings were applied, none of its text was copied.
+Left as they were: the banner alt text, the feature and agent tables, colon-led lists, question headings in the FAQ.

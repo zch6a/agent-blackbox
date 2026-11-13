@@ -12,8 +12,8 @@
 
 [English](README.md) · **简体中文**
 
-把 **Claude Code**、**Codex**、**Gemini CLI**、**OpenCode**、**DeepSeek Harness** 的每一次会话——
-提问、工具调用、代码改动、报错、token 和花费——放进同一个本地界面里回放。
+把 **Claude Code**、**Codex**、**Gemini CLI**、**OpenCode**、**DeepSeek Harness** 的每一次会话，
+包括提问、工具调用、代码改动、报错、token 和花费，都放进同一个本地界面里回放。
 
 零依赖 · 数据不出本机 · 可离线使用
 
@@ -56,7 +56,7 @@ npx github:zch6a/agent-blackbox
 
 <img src="docs/screenshot-insights.png" alt="洞察页：总花费、token、会话数、提问数、工具调用、每日花费图、隐私面板，以及按 Agent 和模型的拆分" width="900" />
 
-**回放**按会话实际发生的顺序逐步重现——时间线一条条展开，时钟和累计费用随之增长：
+**回放**按会话实际发生的顺序逐步重现，时间线一条条展开，时钟和累计费用随之增长：
 
 <img src="docs/replay.gif" alt="回放会话：事件逐条出现，回放条显示时间、进度和累计费用" width="900" />
 
@@ -117,16 +117,16 @@ agent-blackbox 自带一个 Agent Skill（技能）。在 Claude Code 里：
 | **Gemini CLI** | `~/.gemini/tmp/*/chats/session-*.jsonl`、旧版的 `session-*.json`，子 Agent 在 `chats/<会话>/` 下（或 `$GEMINI_CLI_HOME`） | 按 Gemini CLI 自己的方式还原日志（重写的消息、回退、补丁）；从 `projects.json` 找到项目目录，旧版按哈希命名的目录也能对上；文件改动取自 Gemini 自己的 diff；思考 token 按输出计费。 |
 | **DeepSeek Harness** | `~/.dsh/sessions/*/session-*/session.v4.jsonl.zstd`（或 `$DSH_HOME`） | 解码只追加写入的多帧 zstd 日志、`run_code` 里嵌套的工具调用，以及会话日志上传标记。 |
 
-要支持新的 Agent，只需要写一个文件——见 [CONTRIBUTING.md](CONTRIBUTING.md)。
+要支持新的 Agent，只需要写一个文件，见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## 数字是怎么算的
 
 这个工具的意义就在于数字准确，所以这里把计算方式说清楚：
 
 - **费用**：Agent 自己记录了费用（Claude Code 的 `cost-state`、OpenCode 的 `cost`）就直接用，标为 *recorded*；否则按 token 数和公开价目表 *估算*（显示为 `~$1.23`）；有模型查不到价格时标为 *partial*（`~$1.23+`）。你的套餐或合同价可能更低，见[自定义价格](#自定义价格)。
-- **只记录了一部分的会话**：Agent 自己的记账可能从会话中途才开始——Claude Code 是在较新的版本里才开始写 `cost-state` 的，而重新打开一个旧会话也会开始一份几乎什么都没覆盖的新记录。记录开始之前的请求会被估算后加进来，费用标为 *mixed*。（在一台真实电脑上，56 个带 `cost-state` 的会话里有 25 个原本会被少算，其中一个少了 1000 多美元。）
+- **只记录了一部分的会话**：Agent 自己的记账可能从会话中途才开始。Claude Code 是在较新的版本里才开始写 `cost-state` 的，而重新打开一个旧会话也会开始一份几乎什么都没覆盖的新记录。记录开始之前的请求会被估算后加进来，费用标为 *mixed*。（在一台真实电脑上，56 个带 `cost-state` 的会话里有 25 个原本会被少算，其中一个少了 1000 多美元。）
 - **子 Agent**：Claude Code 记录的是整个进程的费用，所以已经包含了记录期间派生的子 Agent。这些子 Agent 显示为 *in parent*，不计入总额；记录开始之前运行的子 Agent 会被估算后加进来。
-- **Token**：`input` 不含缓存部分，缓存读写单独统计。Claude Code 会在一次响应拆成的每一行里重复写同样的用量，Codex 会重复发送相同的 token 计数——两者都做了去重。
+- **Token**：`input` 不含缓存部分，缓存读写单独统计。Claude Code 会在一次响应拆成的每一行里重复写同样的用量，Codex 会重复发送相同的 token 计数，两者都做了去重。
 - **提问数**只统计人类真正输入的内容。自动注入的上下文（`<system-reminder>`、`<environment_context>`、AGENTS.md、IDE 上下文、后台任务通知、定时/循环任务的提示）显示为系统提示，不计入。
 - **活跃时长**不计超过 5 分钟的空闲间隔，所以开了一整夜的会话不会被算成 14 小时的工作。
 
